@@ -9,6 +9,9 @@ import { issueTypeRoutes } from './routes/issueTypes.js';
 import { authRoutes } from './routes/auth.js';
 import { supervisorRoutes } from './routes/supervisors.js';
 import { siteRoutes } from './routes/sites.js';
+import { devStorageRoutes } from './routes/devStorage.js';
+import { uploadRoutes } from './routes/uploads.js';
+import { recordRoutes } from './routes/records.js';
 
 dotenv.config();
 
@@ -36,6 +39,9 @@ export async function buildServer() {
   await server.register(authRoutes);
   await server.register(supervisorRoutes);
   await server.register(siteRoutes);
+  await server.register(devStorageRoutes);
+  await server.register(uploadRoutes);
+  await server.register(recordRoutes);
 
   // Root welcome route
   server.get('/', async () => {

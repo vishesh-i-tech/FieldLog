@@ -12,7 +12,7 @@ Welcome to the **FieldLog** project documentation. FieldLog is an offline-first,
 | **Updates** | **FieldLog Rename, Neutral Wording, Issue Types, Distribution Plan** | ✅ Done | Automated tests |
 | **Phase 1** | **Auth and Roles (Multi-tenant, Owner signup, Supervisor PIN login)** | ✅ Done (Automated tests pass) | Automated tests |
 | **Phase 2** | **Sites and Assignments (CRUD, Supervisor assigned work places)** | ✅ Done (Automated tests pass) | Automated tests |
-| **Phase 3** | **Daily Record (Online only, Live camera photos with GPS, Presigned URLs)** | 🔄 In Progress | Required (End of Phase 3) |
+| **Phase 3** | **Daily Record (Online only, Live camera photos with GPS, Presigned URLs)** | ✅ Done (Ready for Phone Test) | Required (End of Phase 3) |
 | **Phase 4** | Voice Note Recording (Record, playback, upload audio) | ⏳ Not Started | Automated tests |
 | **Phase 5** | Offline Sync (SQLite queue, Background sync worker, Retry, Conflict handling) | ⏳ Not Started | Required (End of Phase 5) |
 | **Phase 6** | Owner Dashboard & Day Detail (7-day grid, Audio player, Photo gallery, "Seen" tick) | ⏳ Not Started | Automated tests |
@@ -39,3 +39,4 @@ Welcome to the **FieldLog** project documentation. FieldLog is an offline-first,
 - [01. Auth and Roles](features/01-auth-and-roles.md)
 - [01b. Customizable Issue Types](features/01b-issue-types.md)
 - [02. Sites and Assignments](features/02-sites-and-assignments.md)
+- [03. Daily Record](features/03-daily-record.md)

@@ -11,8 +11,10 @@ import {
 } from 'react-native';
 import { checkServerHealth, HealthCheckResponse } from '../src/api/client';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
+import { useRouter } from 'expo-router';
 
 export default function StatusScreen() {
+  const router = useRouter();
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_BASE_URL);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -214,25 +216,25 @@ export default function StatusScreen() {
           </Text>
         </View>
 
-        {/* Big Action Button (Hindi + English) */}
+        {/* Open Phase 3 Today's Record Screen Button */}
         <TouchableOpacity
-          style={[styles.actionButton, loading && styles.actionButtonDisabled]}
-          onPress={() => performHealthCheck(apiUrl)}
-          disabled={loading}
+          style={styles.openRecordButton}
+          onPress={() => router.push('/record')}
           activeOpacity={0.8}
         >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={styles.actionButtonText}>चेक करें / Refresh Status</Text>
-          )}
+          <Text style={styles.openRecordIcon}>📝</Text>
+          <View style={styles.openRecordTextContainer}>
+            <Text style={styles.openRecordTitle}>आज का रिकॉर्ड भरें</Text>
+            <Text style={styles.openRecordSubtitle}>Test Today's Record (Live Camera + GPS)</Text>
+          </View>
+          <Text style={styles.openRecordArrow}>→</Text>
         </TouchableOpacity>
 
-        {/* Next Phase Indicator */}
+        {/* Phase Progress Notice */}
         <View style={styles.footerNotice}>
-          <Text style={styles.footerTitle}>Next Step: Phase 1</Text>
+          <Text style={styles.footerTitle}>Phase 3 Ready for Phone Testing</Text>
           <Text style={styles.footerDescription}>
-            Owner signup, supervisor creation, 4-digit PIN authentication, and strict multi-tenant tenant isolation.
+            Phase 1 (Auth & Multi-tenancy) and Phase 2 (Work Places & Assignments) are complete. Test Phase 3's Today's Record screen with live camera and GPS above.
           </Text>
         </View>
       </ScrollView>
@@ -397,6 +399,45 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  openRecordButton: {
+    backgroundColor: '#0284C7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    marginBottom: 20,
+    minHeight: 64,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  openRecordIcon: {
+    fontSize: 26,
+    marginRight: 14,
+  },
+  openRecordTextContainer: {
+    flex: 1,
+  },
+  openRecordTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  openRecordSubtitle: {
+    color: '#BAE6FD',
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  openRecordArrow: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    marginLeft: 8,
   },
   footerNotice: {
     padding: 16,

@@ -4,6 +4,18 @@ All notable changes to the DailyRecord project will be documented in this file.
 
 ---
 
+## [Phase 3] - 2026-10-14: Daily Record Submission & Live Camera Geo-tagging
+### Added
+- Supervisor Today's Record form screen with 3 large status buttons (`पूरा दिन`, `आधा दिन`, `काम बंद`).
+- Live in-app camera viewfinder (`expo-camera`) with auto-disabled gallery access.
+- GPS geotagging (`expo-location`) stamping latitude, longitude, and accuracy on captured photos.
+- Dynamic issue chips multi-selection with Hindi-first labeling.
+- Pre-signed upload endpoint (`POST /api/v1/uploads/presign`) and local dev binary storage handler.
+- Online Daily Record submission endpoint (`POST /api/v1/records`) with client-UUID idempotency.
+- One record per site per calendar day rule with automatic change diff audit logging in `record_edits`.
+- Automated tests verifying presigned upload, record submission, idempotency, same-day updates, and unassigned supervisor blocking.
+- Feature specification `docs/features/03-daily-record.md`.
+
 ## [Phase 2] - 2026-10-14: Work Places & Supervisor Assignments
 ### Added
 - CRUD endpoints for work places (`sites` table) with GPS coordinates and archiving support.
