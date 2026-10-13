@@ -17,6 +17,19 @@ CREATE TABLE "daily_records" (
 	CONSTRAINT "unique_site_record_date" UNIQUE("site_id","record_date")
 );
 --> statement-breakpoint
+CREATE TABLE "issue_types" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"label_hi" varchar(255) NOT NULL,
+	"label_en" varchar(255) NOT NULL,
+	"icon" varchar(64),
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"is_default" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "media" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"record_id" uuid NOT NULL,
@@ -67,7 +80,7 @@ CREATE TABLE "record_edits" (
 CREATE TABLE "record_issues" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"record_id" uuid NOT NULL,
-	"issue_type" varchar(64) NOT NULL,
+	"issue_type_id" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -135,6 +148,7 @@ CREATE TABLE "users" (
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_site_id_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "daily_records" ADD CONSTRAINT "daily_records_submitted_by_users_id_fk" FOREIGN KEY ("submitted_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "issue_types" ADD CONSTRAINT "issue_types_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "media" ADD CONSTRAINT "media_record_id_daily_records_id_fk" FOREIGN KEY ("record_id") REFERENCES "public"."daily_records"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notification_log" ADD CONSTRAINT "notification_log_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "record_acknowledgements" ADD CONSTRAINT "record_acknowledgements_record_id_daily_records_id_fk" FOREIGN KEY ("record_id") REFERENCES "public"."daily_records"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -143,6 +157,7 @@ ALTER TABLE "record_acknowledgements" ADD CONSTRAINT "record_acknowledgements_re
 ALTER TABLE "record_edits" ADD CONSTRAINT "record_edits_record_id_daily_records_id_fk" FOREIGN KEY ("record_id") REFERENCES "public"."daily_records"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "record_edits" ADD CONSTRAINT "record_edits_edited_by_users_id_fk" FOREIGN KEY ("edited_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "record_issues" ADD CONSTRAINT "record_issues_record_id_daily_records_id_fk" FOREIGN KEY ("record_id") REFERENCES "public"."daily_records"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "record_issues" ADD CONSTRAINT "record_issues_issue_type_id_issue_types_id_fk" FOREIGN KEY ("issue_type_id") REFERENCES "public"."issue_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "site_assignments" ADD CONSTRAINT "site_assignments_site_id_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "public"."sites"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "site_assignments" ADD CONSTRAINT "site_assignments_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sites" ADD CONSTRAINT "sites_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -152,11 +167,14 @@ ALTER TABLE "transcripts" ADD CONSTRAINT "transcripts_audio_media_id_media_id_fk
 ALTER TABLE "users" ADD CONSTRAINT "users_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "records_org_date_idx" ON "daily_records" USING btree ("organization_id","record_date");--> statement-breakpoint
 CREATE INDEX "records_site_idx" ON "daily_records" USING btree ("site_id");--> statement-breakpoint
+CREATE INDEX "issue_types_org_idx" ON "issue_types" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX "issue_types_sort_idx" ON "issue_types" USING btree ("organization_id","sort_order");--> statement-breakpoint
 CREATE INDEX "media_record_idx" ON "media" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "notifications_user_idx" ON "notification_log" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "acknowledgements_record_idx" ON "record_acknowledgements" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "record_edits_record_idx" ON "record_edits" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "record_issues_record_idx" ON "record_issues" USING btree ("record_id");--> statement-breakpoint
+CREATE INDEX "record_issues_type_idx" ON "record_issues" USING btree ("issue_type_id");--> statement-breakpoint
 CREATE INDEX "site_assignments_user_idx" ON "site_assignments" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sites_org_idx" ON "sites" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX "summaries_record_idx" ON "summaries" USING btree ("record_id");--> statement-breakpoint

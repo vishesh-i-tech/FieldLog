@@ -26,6 +26,7 @@ test('GET / returns API welcome metadata', async () => {
 
   assert.strictEqual(response.statusCode, 200);
   const body = JSON.parse(response.payload);
-  assert.strictEqual(body.app, 'DailyRecord API');
+  assert.strictEqual(body.app, 'FieldLog API');
   assert.strictEqual(body.healthUrl, '/health');
+  assert.strictEqual(body.versionUrl, '/version');
 });

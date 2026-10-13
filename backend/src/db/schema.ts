@@ -105,18 +105,38 @@ export const dailyRecords = pgTable('daily_records', {
   index('records_site_idx').on(table.siteId),
 ]);
 
-// 6. RECORD ISSUES
+// 6. ISSUE TYPES (Customizable per Organization, max 8 active visible)
+export const issueTypes = pgTable('issue_types', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  labelHi: varchar('label_hi', { length: 255 }).notNull(),
+  labelEn: varchar('label_en', { length: 255 }).notNull(),
+  icon: varchar('icon', { length: 64 }),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  isDefault: boolean('is_default').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('issue_types_org_idx').on(table.organizationId),
+  index('issue_types_sort_idx').on(table.organizationId, table.sortOrder),
+]);
+
+// 7. RECORD ISSUES
 export const recordIssues = pgTable('record_issues', {
   id: uuid('id').primaryKey().defaultRandom(),
   recordId: uuid('record_id')
     .notNull()
     .references(() => dailyRecords.id, { onDelete: 'cascade' }),
-  issueType: varchar('issue_type', { length: 64 })
-    .$type<'material_not_arrived' | 'less_manpower' | 'rain' | 'machine_broken' | 'need_money' | 'other'>()
-    .notNull(),
+  issueTypeId: uuid('issue_type_id')
+    .notNull()
+    .references(() => issueTypes.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('record_issues_record_idx').on(table.recordId),
+  index('record_issues_type_idx').on(table.issueTypeId),
 ]);
 
 // 7. MEDIA (Photos & Audio)
@@ -223,6 +243,26 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   users: many(users),
   sites: many(sites),
   dailyRecords: many(dailyRecords),
+  issueTypes: many(issueTypes),
+}));
+
+export const issueTypesRelations = relations(issueTypes, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [issueTypes.organizationId],
+    references: [organizations.id],
+  }),
+  recordIssues: many(recordIssues),
+}));
+
+export const recordIssuesRelations = relations(recordIssues, ({ one }) => ({
+  record: one(dailyRecords, {
+    fields: [recordIssues.recordId],
+    references: [dailyRecords.id],
+  }),
+  issueType: one(issueTypes, {
+    fields: [recordIssues.issueTypeId],
+    references: [issueTypes.id],
+  }),
 }));
 
 export const sitesRelations = relations(sites, ({ one, many }) => ({

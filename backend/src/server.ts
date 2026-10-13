@@ -4,6 +4,11 @@ import sensible from '@fastify/sensible';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
 import { healthRoutes } from './routes/health.js';
+import { versionRoutes } from './routes/version.js';
+import { issueTypeRoutes } from './routes/issueTypes.js';
+import { authRoutes } from './routes/auth.js';
+import { supervisorRoutes } from './routes/supervisors.js';
+import { siteRoutes } from './routes/sites.js';
 
 dotenv.config();
 
@@ -26,13 +31,19 @@ export async function buildServer() {
 
   // Register Routes
   await server.register(healthRoutes);
+  await server.register(versionRoutes);
+  await server.register(issueTypeRoutes);
+  await server.register(authRoutes);
+  await server.register(supervisorRoutes);
+  await server.register(siteRoutes);
 
   // Root welcome route
   server.get('/', async () => {
     return {
-      app: 'DailyRecord API',
+      app: 'FieldLog API',
       version: '0.1.0',
       healthUrl: '/health',
+      versionUrl: '/version',
       docs: '/docs',
     };
   });
@@ -61,7 +72,7 @@ async function start() {
 
     const localIps = getLocalIpAddress();
     console.log('\n======================================================');
-    console.log(`🚀 DailyRecord API is running!`);
+    console.log(`🚀 FieldLog API is running!`);
     console.log(`   Local URL:    http://localhost:${port}`);
     if (localIps.length > 0) {
       console.log(`   LAN/Phone IP: http://${localIps[0]}:${port}`);

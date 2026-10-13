@@ -1,16 +1,30 @@
 {
   "expo": {
-    "name": "DailyRecord",
-    "slug": "dailyrecord",
+    "name": "FieldLog",
+    "slug": "fieldlog",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "dailyrecord",
+    "scheme": "fieldlog",
     "userInterfaceStyle": "light",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "package": "com.dailyrecord.app"
+      "package": "com.fieldlog.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "bundler": "metro"

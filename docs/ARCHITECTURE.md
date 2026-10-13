@@ -78,3 +78,20 @@ DailyRecord is designed around **offline-first field collection** and **centrali
   2. Background job extracts transcript using speech-to-text with Hindi acoustic models.
   3. LLM synthesizes structured summary (material requests, site delays, manpower status).
   4. Original audio and raw text are always retained alongside the summary as the immutable source of truth.
+
+---
+
+## Environment Separation & Infrastructure Tiers
+
+```text
++---------------------+-------------------------------+-------------------------------+
+| Feature             | Development (Local)           | Preview (Internal Testers)    | Production (Google Play)      |
++---------------------+-------------------------------+-------------------------------+
+| App Format          | Expo Go / Dev Client          | Standalone Android APK        | Android App Bundle (.aab)     |
+| Backend Host        | Laptop (`http://<lan-ip>:4000`)| Cloudflare/Render/Railway HTTPS| Render/Railway Production     |
+| Neon Database       | `dev` branch (`db:push`)      | `preview` branch (migrations) | `main` branch (migrations)    |
+| Storage Provider    | Local disk stub (`uploads/`)  | Cloudflare R2                 | Cloudflare R2                 |
+| Update Mechanism    | Metro HMR                     | EAS Update (OTA)              | Google Play In-App Updates    |
++---------------------+-------------------------------+-------------------------------+
+```
+

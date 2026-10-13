@@ -47,3 +47,38 @@ This document records key technical decisions, rationale, trade-offs, and assump
 * **Decision:** Retain an adapter interface `IAiTranscriptionProvider` and `IAiSummaryProvider`.
 * **Testing Protocol:** Groq Whisper (`whisper-large-v3`) is selected as primary candidate due to low cost (~$0.00185/min) and high speed, but will be benchmarked live in Phase 7 against 5 realistic Hindi/Hinglish audio samples (including background construction noise).
 * **Summarizer:** Will query the current recommended Flash-class model with live pricing verified at Phase 7 implementation.
+
+---
+
+### DEC-006: Product Rename to FieldLog & Neutral Wording
+* **Date:** 2026-10-14
+* **Decision:** App renamed to **FieldLog**. The system is generalized for any business owner running work across multiple remote locations (shops, farms, factories, delivery, guards, construction).
+* **Code Identifier Convention:** All user-facing text uses "Work" (Hindi: "काम") via i18n dictionaries. Database tables, API routes, and code identifiers strictly retain `sites` and `site_id` to avoid breaking schema contracts. In all internal code and docs, "sites" signifies "work place".
+
+---
+
+### DEC-007: Dynamic Issue Types System
+* **Date:** 2026-10-14
+* **Decision:** Replace hard-coded issue enums with a dynamic `issue_types` table.
+* **Rules:**
+  - 6 universal default chips seeded upon organization creation.
+  - Owners can create, rename, reorder, and hide chips.
+  - Maximum 8 active visible chips enforced at API layer to prevent cluttered mobile UI for field supervisors.
+  - Strict multi-tenant isolation enforced on all read/write endpoints.
+
+---
+
+### DEC-008: Android Distribution via EAS Preview APK
+* **Date:** 2026-10-14
+* **Decision:** For internal testing (several months), distribute standalone Android `.apk` files using EAS Build `preview` profile rather than publishing directly to Google Play Store.
+* **Updates:** Use EAS Update (OTA) for fast JavaScript-only bug fixes; enforce backend minimum app version via `GET /version` to prevent outdated client desync.
+
+---
+
+### DEC-009: Environment Separation (Dev, Preview, Production)
+* **Date:** 2026-10-14
+* **Decision:** Separate three execution tiers:
+  - **Development:** Local Fastify backend on Wi-Fi IP, Neon `dev` branch via `db:push` or local tests, Expo development build / Expo Go.
+  - **Preview (Testers):** Hosted Fastify backend with valid SSL/HTTPS, dedicated Neon `preview` branch with structured migrations (`db:migrate`), standalone Android APK.
+  - **Production (Future):** Scaled backend, Neon `main` branch, Android AAB for Google Play Store.
+
