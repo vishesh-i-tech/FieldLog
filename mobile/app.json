@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "DailyRecord",
+    "slug": "dailyrecord",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "dailyrecord",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.dailyrecord.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

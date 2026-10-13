@@ -1,0 +1,33 @@
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: '#0F172A', // Slate 900
+          },
+          headerTintColor: '#F8FAFC',
+          headerTitleStyle: {
+            fontWeight: '700',
+          },
+          contentStyle: {
+            backgroundColor: '#0B0F19',
+          },
+        }}
+      >
+        <Stack.Screen
+          name="index"
+          options={{
+            title: 'DailyRecord — System Status',
+            headerShadowVisible: false,
+          }}
+        />
+      </Stack>
+    </SafeAreaProvider>
+  );
+}

@@ -1,0 +1,21 @@
+{
+  "name": "dailyrecord-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "mobile"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace=backend run dev",
+    "dev:mobile": "npm --workspace=mobile run start",
+    "build:backend": "npm --workspace=backend run build",
+    "db:generate": "npm --workspace=backend run db:generate",
+    "db:migrate": "npm --workspace=backend run db:migrate",
+    "db:push": "npm --workspace=backend run db:push",
+    "test:backend": "npm --workspace=backend run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
