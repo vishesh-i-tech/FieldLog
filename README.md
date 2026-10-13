@@ -19,10 +19,10 @@ Business owners running work across multiple remote sites cannot visit every loc
 
 **FieldLog solves this with high-trust, zero-typing reporting:**
 
-* 🟢 **3-Tap Daily Status:** Big, accessible buttons for **"पूरा दिन (Full Day)"**, **"आधा दिन (Half Day)"**, and **"काम बंद (Stopped)"**.
+* 🟢 **3-Tap Daily Status:** Big, accessible buttons for **Full Day**, **Half Day**, and **Work Stopped** (with multi-language localization).
 * 📸 **Live-Camera Geo-Tagging:** Real-time in-app camera capture stamped with GPS coordinates, satellite accuracy, and capture timestamps. **No photo gallery uploads allowed** (anti-fraud protection).
-* 🎙️ **60-Second Voice Notes:** Supervisors speak their daily update in Hindi/regional language. Live audio recording, instant in-app playback preview, and re-record capability.
-* 🏷️ **Dynamic Issue Chips:** Tap-to-report obstacles (*"सामान नहीं आया"*, *"स्टाफ कम"*, *"बारिश"*, *"मशीन खराब"*, etc.) customized per business.
+* 🎙️ **60-Second Voice Notes:** Supervisors speak their daily update verbally. Live audio recording, instant in-app playback preview, and re-record capability.
+* 🏷️ **Dynamic Issue Chips:** Tap-to-report obstacles (*"Material Delayed"*, *"Short Staffed"*, *"Severe Weather"*, *"Equipment Breakdown"*, etc.) customized per business.
 * 🌐 **Instant Laptop Web Preview:** Develop and test live in your laptop browser (`npm run dev:web`) inside a centered 430px smartphone frame with dev-safe fallbacks.
 * 🛡️ **Strict Multi-Tenancy:** Complete tenant isolation at both the API layer and the database layer.
 
@@ -68,7 +68,7 @@ Business owners running work across multiple remote sites cannot visit every loc
 | **Phase 4** | **Voice Note Recording** (Web MediaRecorder, expo-audio, Live timer, Playback) | ✅ Complete | Automated Tests Pass |
 | **Phase 5** | Offline Sync Queue (SQLite, background retry worker, conflict resolution) | ⏳ In Progress | Manual Phone Check |
 | **Phase 6** | Owner Dashboard & Day Detail (7-day grid, Audio player, Photo carousel, "Seen" tick) | 📋 Planned | Automated Tests |
-| **Phase 7** | AI Voice Pipeline (Hindi Whisper transcription, LLM daily summaries) | 📋 Planned | Manual Phone Check |
+| **Phase 7** | AI Voice Pipeline (Voice transcription via Whisper, LLM daily summaries) | 📋 Planned | Manual Phone Check |
 | **Phase 8** | Reminders & Push Notifications (5 PM supervisor alert, Evening digest) | 📋 Planned | Automated Tests |
 | **Phase 9** | Anti-Fake Hardening (Mock location flags, Time skew checks, Rate limits) | 📋 Planned | Automated Tests |
 | **Phase 10** | Production Release (EAS Build standalone APK/AAB, Play Store readiness) | 📋 Planned | Final Release |
