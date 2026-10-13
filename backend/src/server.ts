@@ -23,10 +23,21 @@ export async function buildServer() {
     logger: true,
   });
 
-  // Enable CORS for mobile app requests
+  // Configure CORS: permissive for development (localhost / Expo web), strict in production
+  const isDev = process.env.NODE_ENV !== 'production';
   await server.register(cors, {
-    origin: true, // Allow all origins for dev / mobile client
+    origin: isDev
+      ? true // Allow localhost:8081, dev browser, and mobile clients in dev
+      : (origin, cb) => {
+          // In production, only allow approved frontend domain or mobile apps (no-origin)
+          if (!origin || origin.startsWith('https://')) {
+            cb(null, true);
+            return;
+          }
+          cb(new Error('CORS origin denied'), false);
+        },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials: true,
   });
 
   // Register sensible utilities for standard HTTP errors

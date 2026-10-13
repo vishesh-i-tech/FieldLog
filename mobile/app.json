@@ -16,7 +16,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.fieldlog.app",
+      "package": "com.REPLACE_ME.fieldlog",
       "versionCode": 1,
       "permissions": [
         "CAMERA",
@@ -30,7 +30,8 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-audio"
     ]
   }
 }

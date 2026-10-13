@@ -99,8 +99,8 @@ export default function StatusScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         {/* Header Title */}
         <View style={styles.header}>
-          <Text style={styles.title}>DailyRecord</Text>
-          <Text style={styles.subtitle}>Phase 0 Foundation • System Health Check</Text>
+          <Text style={styles.title}>FieldLog</Text>
+          <Text style={styles.subtitle}>System Health & Diagnostic Hub</Text>
         </View>
 
         {/* Big Status Badge */}

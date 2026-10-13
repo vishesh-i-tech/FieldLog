@@ -24,6 +24,14 @@ const photoSubmissionSchema = z.object({
   flags: z.record(z.any()).default({}),
 });
 
+const audioSubmissionSchema = z.object({
+  storageKey: z.string().min(1),
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative().optional(),
+  capturedAt: z.string().optional(),
+});
+
 const submitRecordSchema = z.object({
   clientId: z.string().uuid('Valid client UUID required for idempotent sync'),
   siteId: z.string().uuid(),
@@ -35,6 +43,7 @@ const submitRecordSchema = z.object({
   flags: z.record(z.any()).default({}),
   issueTypeIds: z.array(z.string().uuid()).default([]),
   photos: z.array(photoSubmissionSchema).max(6, 'Maximum 6 photos per record').default([]),
+  audio: audioSubmissionSchema.optional(),
 });
 
 export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
@@ -63,11 +72,14 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       status,
       capturedAt,
       missingPhoto,
-      missingVoice,
       flags,
       issueTypeIds,
       photos,
+      audio,
     } = parsed.data;
+
+    const hasVoice = !!audio;
+    const missingVoice = hasVoice ? false : (parsed.data.missingVoice ?? true);
 
     // Verify site belongs to user's organization
     const [site] = await db
@@ -174,6 +186,19 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         await db.insert(media).values(photoRows);
       }
 
+      // 5. Attach audio if provided
+      if (audio) {
+        await db.insert(media).values({
+          recordId: existingDayRecord.id,
+          kind: 'audio',
+          storageKey: audio.storageKey,
+          mimeType: audio.mimeType,
+          sizeBytes: audio.sizeBytes,
+          durationSeconds: audio.durationSeconds || null,
+          capturedAt: audio.capturedAt ? new Date(audio.capturedAt) : capturedAtDate,
+        });
+      }
+
       return reply.status(200).send({
         message: "Today's record updated successfully.",
         record: updatedRecord,
@@ -223,6 +248,19 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         flags: p.flags,
       }));
       await db.insert(media).values(photoRows);
+    }
+
+    // Insert audio if provided
+    if (audio) {
+      await db.insert(media).values({
+        recordId: newRecord.id,
+        kind: 'audio',
+        storageKey: audio.storageKey,
+        mimeType: audio.mimeType,
+        sizeBytes: audio.sizeBytes,
+        durationSeconds: audio.durationSeconds || null,
+        capturedAt: audio.capturedAt ? new Date(audio.capturedAt) : capturedAtDate,
+      });
     }
 
     return reply.status(201).send({

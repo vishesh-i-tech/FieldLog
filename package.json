@@ -9,6 +9,8 @@
   "scripts": {
     "dev:backend": "npm --workspace=backend run dev",
     "dev:mobile": "npm --workspace=mobile run start",
+    "dev:web": "npm --workspace=mobile run web",
+    "seed:dev": "npm --workspace=backend run seed:dev",
     "build:backend": "npm --workspace=backend run build",
     "db:generate": "npm --workspace=backend run db:generate",
     "db:migrate": "npm --workspace=backend run db:migrate",

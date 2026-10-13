@@ -1,6 +1,36 @@
-# Setup Guide: Laptop, Neon Postgres & Phone
+# FieldLog Setup & Execution Guide: Web Browser, Laptop & Phone
 
-Follow this step-by-step guide to run the DailyRecord system on your laptop, configure your free Neon database, and test the app live on your mobile phone.
+> [!IMPORTANT]
+> ### 🌐 Web Browser Preview vs 📱 Physical Phone Testing
+> * **What works in the Laptop Web Browser (`npm run dev:web`):**
+>   - Fast visual polish and layout inspection in a centered **430px smartphone frame**.
+>   - Full interactive Today's Record form (big status buttons, dynamic issue chips).
+>   - Web-safe live camera simulation (stamped with timestamp and GPS coordinates).
+>   - Voice recording via browser microphone (`MediaRecorder`).
+>   - Full local backend API communication and testing with dev seed data.
+> * **What strictly requires a Physical Android Phone:**
+>   - Hard enforcement of live camera hardware (verifying gallery imports cannot be triggered).
+>   - Physical satellite GPS accuracy and Android mock location flag detection.
+>   - Native SQLite offline queue and network airplane-mode recovery (Phase 5).
+>   - Push notifications and native background sync workers.
+
+---
+
+## Quick Commands Reference
+
+```powershell
+# 1. Start Backend API (Port 4000)
+npm run dev:backend
+
+# 2. Seed Realistic Dev Data (Owner, 2 Supervisors, 3 Work Places, 7-Day History)
+npm run seed:dev
+
+# 3. View App in Laptop Web Browser (Fast UI Polish)
+npm run dev:web
+
+# 4. View App on Physical Phone (Expo Go QR Code)
+npm run dev:mobile
+```
 
 ---
 

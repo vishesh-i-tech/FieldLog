@@ -4,6 +4,18 @@ All notable changes to the DailyRecord project will be documented in this file.
 
 ---
 
+## [Phase 4] - 2026-10-14: Voice Note Recording & Web Browser Preview
+### Added
+- Web browser live preview (`npm run dev:web`) with a centered 430px smartphone container on widescreen monitors.
+- Development database seeder (`npm run seed:dev`) seeding test owner, 2 supervisors, 3 work places, and 7-day realistic daily record history.
+- Cross-platform voice note recording: HTML5 `MediaRecorder` on web and `expo-audio` on physical mobile devices.
+- Synthetic fallback audio generator for web browser dev testing when microphone hardware is unavailable.
+- In-app voice note controls: live pulsing timer (up to 60s), visual progress bar, instant audio playback preview, and re-record/delete capability.
+- Pre-signed audio upload support (`POST /api/v1/uploads/presign` with `kind: 'audio'`) accepting `m4a`, `mp4`, `webm`, and `aac`.
+- Daily record audio linking in `media` table and `missing_voice` status tracking.
+- Automated tests verifying audio presigning and record submission with audio attachments.
+- Feature specification `docs/features/04-voice-note.md` and UI living directory `docs/UI_NOTES.md`.
+
 ## [Phase 3] - 2026-10-14: Daily Record Submission & Live Camera Geo-tagging
 ### Added
 - Supervisor Today's Record form screen with 3 large status buttons (`पूरा दिन`, `आधा दिन`, `काम बंद`).

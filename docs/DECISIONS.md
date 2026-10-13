@@ -82,3 +82,26 @@ This document records key technical decisions, rationale, trade-offs, and assump
   - **Preview (Testers):** Hosted Fastify backend with valid SSL/HTTPS, dedicated Neon `preview` branch with structured migrations (`db:migrate`), standalone Android APK.
   - **Production (Future):** Scaled backend, Neon `main` branch, Android AAB for Google Play Store.
 
+---
+
+### DEC-010: Web Preview & Dev-Safe Fallbacks Architecture
+* **Date:** 2026-10-14
+* **Decision:** Support live laptop web browser frontend development (`npm run dev:web`) via `react-native-web` without sacrificing native Android constraints.
+* **Architecture:**
+  - Phone-sized container: Centered 430px column with `#030712` desktop frame backdrop in `app/_layout.tsx`.
+  - Native-only feature isolation: Features that require native hardware (camera, satellite GPS, secure hardware keystore, SQLite, native push) are wrapped behind platform gates.
+  - Strict Dev Isolation: DEV mock photos, synthetic mock audio, and mock GPS coordinates are strictly guarded behind `Platform.OS === 'web' && __DEV__`. They are stripped out of release builds.
+  - Gallery Prohibition Intact: The real Android application continues to prohibit gallery pickers, preserving anti-fraud guarantees.
+
+---
+
+### DEC-011: Cross-Platform Voice Note Architecture (Phase 4)
+* **Date:** 2026-10-14
+* **Decision:** Implement voice recording abstraction using HTML5 `MediaRecorder` on Web (`audio/webm`) and Expo SDK 52 `expo-audio` on Native (`audio/m4a`).
+* **Constraints:**
+  - 60-second hardware recording cap to protect mobile data usage and transcription latency.
+  - Live pulsing recording timer and visual progress bar.
+  - Instant in-app playback preview with pause and re-record capability.
+  - Presigned upload URL flow with MIME validation (`audio/m4a`, `audio/webm`, `audio/mp4`, `audio/aac`).
+  - Recorded audio attached to master record via `media` table (`kind: 'audio'`) and reflected on `daily_records.missing_voice`.
+

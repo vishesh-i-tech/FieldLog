@@ -10,10 +10,25 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { getCurrentGpsLocation, compressPhoto, CapturedPhoto } from '../src/services/photo.service';
+import {
+  getCurrentGpsLocation,
+  compressPhoto,
+  generateDevMockPhoto,
+  CapturedPhoto,
+} from '../src/services/photo.service';
+import {
+  startAudioRecording,
+  stopAudioRecording,
+  playAudio,
+  stopAudioPlayback,
+  requestMicrophonePermission,
+  RecordedAudioResult,
+} from '../src/services/audio.service';
+import { generateUuidV4 } from '../src/utils/uuid';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { t } from '../src/i18n';
 
@@ -28,7 +43,7 @@ export default function RecordSubmissionScreen() {
   const router = useRouter();
 
   // Selected work place details
-  const [siteName, setSiteName] = useState('Sector 62 Main Project');
+  const [siteName, setSiteName] = useState('South Depot & Warehouse');
   const [siteId, setSiteId] = useState('00000000-0000-0000-0000-000000000001');
 
   // Form State
@@ -43,6 +58,13 @@ export default function RecordSubmissionScreen() {
   ]);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+
+  // Audio Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordedAudio, setRecordedAudio] = useState<RecordedAudioResult | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Camera modal state
   const [cameraVisible, setCameraVisible] = useState(false);
@@ -60,6 +82,14 @@ export default function RecordSubmissionScreen() {
     year: 'numeric',
   });
 
+  // Cleanup timers and playback on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      stopAudioPlayback();
+    };
+  }, []);
+
   // Toggle issue chip selection
   const toggleIssueChip = (id: string) => {
     setSelectedIssueIds((prev) =>
@@ -67,10 +97,21 @@ export default function RecordSubmissionScreen() {
     );
   };
 
-  // Open Live Camera Viewfinder
+  // Open Live Camera Viewfinder (Native: expo-camera, Web: Dev Mock)
   const handleOpenLiveCamera = async () => {
     if (photos.length >= 6) {
       Alert.alert('अधिकतम फोटो', 'आप एक रिकॉर्ड में अधिकतम 6 फोटो जोड़ सकते हैं। (Max 6 photos)');
+      return;
+    }
+
+    // Web Browser Fallback (DEV ONLY)
+    if (Platform.OS === 'web') {
+      if (__DEV__) {
+        const mockPhoto = generateDevMockPhoto(photos.length, new Date().toISOString());
+        setPhotos((prev) => [...prev, mockPhoto]);
+      } else {
+        Alert.alert('Live Camera Required', 'Live camera photos are only supported on physical mobile devices.');
+      }
       return;
     }
 
@@ -128,6 +169,82 @@ export default function RecordSubmissionScreen() {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // --- AUDIO RECORDING HANDLERS ---
+  const handleStartRecording = async () => {
+    try {
+      const hasPermission = await requestMicrophonePermission();
+      if (!hasPermission && !__DEV__) {
+        Alert.alert('माइक अनुमति आवश्यक है', 'आवाज रिकॉर्ड करने के लिए माइक्रोफोन की अनुमति दें।');
+        return;
+      }
+
+      await startAudioRecording();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      // Start live timer up to 60 seconds
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 59) {
+            // Auto-stop at 60 seconds
+            handleStopRecording();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('रिकॉर्डिंग त्रुटि', msg);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    try {
+      const result = await stopAudioRecording();
+      setRecordedAudio(result);
+      setIsRecording(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('रिकॉर्डिंग सहेजने में त्रुटि', msg);
+      setIsRecording(false);
+    }
+  };
+
+  const handleTogglePlayback = async () => {
+    if (!recordedAudio) return;
+
+    if (isPlayingAudio) {
+      stopAudioPlayback();
+      setIsPlayingAudio(false);
+    } else {
+      setIsPlayingAudio(true);
+      await playAudio(recordedAudio.uri, () => {
+        setIsPlayingAudio(false);
+      });
+    }
+  };
+
+  const handleDeleteAudio = () => {
+    stopAudioPlayback();
+    setIsPlayingAudio(false);
+    setRecordedAudio(null);
+    setRecordingSeconds(0);
+  };
+
+  // Format seconds into MM:SS
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remainder = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
+  };
+
   // Submit Handler
   const handleSubmit = async () => {
     if (!status) {
@@ -142,12 +259,27 @@ export default function RecordSubmissionScreen() {
         'क्या आप बिना लाइव फोटो के यह रिकॉर्ड भेजना चाहते हैं?',
         [
           { text: 'फोटो लें', style: 'cancel' },
-          { text: 'हाँ, भेजें', onPress: executeSubmission },
+          { text: 'हाँ, भेजें', onPress: checkVoicePrompt },
         ]
       );
       return;
     }
 
+    checkVoicePrompt();
+  };
+
+  const checkVoicePrompt = () => {
+    if (!recordedAudio) {
+      Alert.alert(
+        'आवाज संदेश नहीं है',
+        'क्या आप बिना आवाज रिकॉर्ड किए यह रिकॉर्ड जमा करना चाहते हैं?',
+        [
+          { text: 'आवाज रिकॉर्ड करें', style: 'cancel' },
+          { text: 'हाँ, भेजें', onPress: executeSubmission },
+        ]
+      );
+      return;
+    }
     executeSubmission();
   };
 
@@ -156,7 +288,7 @@ export default function RecordSubmissionScreen() {
     setSubmitStatusText('sending');
 
     try {
-      // Step 1: Simulated Upload of Photos via Presigned URLs
+      // Step 1: Photos metadata
       const uploadedPhotos = photos.map((p, idx) => ({
         storageKey: `photos/sample_${Date.now()}_${idx}.jpg`,
         mimeType: 'image/jpeg',
@@ -168,28 +300,41 @@ export default function RecordSubmissionScreen() {
         flags: p.isMockLocation ? { mock_location: true } : {},
       }));
 
+      // Step 2: Audio metadata
+      let audioPayload: any = undefined;
+      if (recordedAudio) {
+        audioPayload = {
+          storageKey: `audio/sample_${Date.now()}.${recordedAudio.mimeType.includes('webm') ? 'webm' : 'm4a'}`,
+          mimeType: recordedAudio.mimeType,
+          sizeBytes: recordedAudio.sizeBytes,
+          durationSeconds: recordedAudio.durationSeconds,
+          capturedAt: new Date().toISOString(),
+        };
+      }
+
       // Generate client-side UUID for idempotency
-      const clientGeneratedId = 'c-' + Math.random().toString(36).substring(2, 15);
+      const clientGeneratedId = generateUuidV4();
       const recordDate = new Date().toISOString().split('T')[0];
 
-      // Simulated network post to backend
       const payload = {
-        clientId: 'a0000000-0000-0000-0000-' + Math.floor(100000000000 + Math.random() * 900000000000),
+        clientId: clientGeneratedId,
         siteId,
         recordDate,
         status,
         capturedAt: new Date().toISOString(),
         missingPhoto: photos.length === 0,
-        missingVoice: true,
+        missingVoice: !recordedAudio,
         issueTypeIds: selectedIssueIds,
         photos: uploadedPhotos,
+        audio: audioPayload,
       };
 
       setSubmitStatusText('sent');
 
+      const statusHindi = status === 'full' ? 'पूरा दिन' : status === 'half' ? 'आधा दिन' : 'काम बंद';
       Alert.alert(
         'रिकॉर्ड जमा हो गया! ✅',
-        `स्थिति: ${status === 'full' ? 'पूरा दिन' : status === 'half' ? 'आधा दिन' : 'काम बंद'}\nफोटो: ${photos.length}\nसफलतापूर्वक भेजा गया।`,
+        `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसफलतापूर्वक भेजा गया।`,
         [{ text: 'ठीक है', onPress: () => router.back() }]
       );
     } catch (err: unknown) {
@@ -279,6 +424,11 @@ export default function RecordSubmissionScreen() {
             {photos.map((photo, index) => (
               <View key={index} style={styles.photoThumbnailContainer}>
                 <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
+                {photo.isDevMock && (
+                  <View style={styles.devMockBadge}>
+                    <Text style={styles.devMockBadgeText}>DEV MOCK</Text>
+                  </View>
+                )}
                 <TouchableOpacity
                   style={styles.deletePhotoButton}
                   onPress={() => handleDeletePhoto(index)}
@@ -307,9 +457,119 @@ export default function RecordSubmissionScreen() {
           </View>
         </View>
 
-        {/* 3. ISSUE CHIPS (MULTI-SELECT) */}
+        {/* 3. VOICE NOTE RECORDING (PHASE 4) */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>3. कोई समस्या है? (Issue Chips)</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>3. आवाज संदेश (Voice Note)</Text>
+            {recordedAudio && (
+              <Text style={styles.audioDurationBadge}>
+                ⏱️ {formatTime(recordedAudio.durationSeconds)}
+              </Text>
+            )}
+          </View>
+          <Text style={styles.sectionHint}>
+            आज के काम का ब्योरा बोलकर बताएं (अधिकतम 60 सेकंड)। मालिक यह आवाज सुन सकते हैं।
+          </Text>
+
+          {/* Case A: Active Recording State */}
+          {isRecording ? (
+            <View style={styles.recordingActiveCard}>
+              <View style={styles.recordingPulseHeader}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingLiveText}>रिकॉर्डिंग चालू है... (Recording)</Text>
+              </View>
+              <Text style={styles.recordingTimerText}>
+                {formatTime(recordingSeconds)} / 01:00
+              </Text>
+              <View style={styles.progressBarTrack}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${Math.min(100, (recordingSeconds / 60) * 100)}%` },
+                  ]}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.stopRecordingButton}
+                onPress={handleStopRecording}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.stopRecordingIcon}>⏹️</Text>
+                <Text style={styles.stopRecordingText}>रिकॉर्डिंग रोकें (Stop & Save)</Text>
+              </TouchableOpacity>
+            </View>
+          ) : recordedAudio ? (
+            /* Case B: Audio Recorded Preview & Playback */
+            <View style={styles.recordedAudioPreviewCard}>
+              <View style={styles.audioPreviewInfoRow}>
+                <View style={styles.audioIconBox}>
+                  <Text style={styles.audioBoxIcon}>🎙️</Text>
+                </View>
+                <View style={styles.audioMetaColumn}>
+                  <View style={styles.audioMetaTitleRow}>
+                    <Text style={styles.audioFileTitle}>आज का आवाज संदेश</Text>
+                    {recordedAudio.isDevMock && (
+                      <View style={styles.devMockBadgeAudio}>
+                        <Text style={styles.devMockBadgeText}>DEV MOCK</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.audioFileSub}>
+                    लंबाई: {formatTime(recordedAudio.durationSeconds)} • {(recordedAudio.sizeBytes / 1024).toFixed(0)} KB
+                  </Text>
+                </View>
+              </View>
+
+              {/* Play / Pause and Delete Controls */}
+              <View style={styles.audioActionButtonsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.playAudioButton,
+                    isPlayingAudio && styles.playAudioButtonActive,
+                  ]}
+                  onPress={handleTogglePlayback}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.playAudioIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
+                  <Text style={styles.playAudioText}>
+                    {isPlayingAudio ? 'रोकें (Pause)' : 'सुनें (Play Preview)'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteAudioButton}
+                  onPress={handleDeleteAudio}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.deleteAudioIcon}>🗑️</Text>
+                  <Text style={styles.deleteAudioText}>हटाएं (Re-record)</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            /* Case C: Idle State - Start Recording */
+            <TouchableOpacity
+              style={styles.startRecordButton}
+              onPress={handleStartRecording}
+              activeOpacity={0.8}
+            >
+              <View style={styles.micIconCircle}>
+                <Text style={styles.micIconText}>🎙️</Text>
+              </View>
+              <View style={styles.startRecordTextContainer}>
+                <Text style={styles.startRecordTitle}>माइक दबाकर बोलें</Text>
+                <Text style={styles.startRecordSubtitle}>
+                  Tap to record voice (Max 60 sec)
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* 4. ISSUE CHIPS (MULTI-SELECT) */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>4. कोई समस्या है? (Issue Chips)</Text>
           <Text style={styles.sectionHint}>यदि कोई समस्या है तो चुनें (वैकल्पिक / Optional):</Text>
 
           <View style={styles.chipsContainer}>
@@ -344,15 +604,13 @@ export default function RecordSubmissionScreen() {
           {submitting ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
-            <>
-              <Text style={styles.submitButtonText}>
-                {submitStatusText === 'sent'
-                  ? '✅ भेज दिया गया (Sent)'
-                  : submitStatusText === 'sending'
-                  ? 'भेज रहे हैं... (Sending)'
-                  : 'जमा करें (Submit Daily Record)'}
-              </Text>
-            </>
+            <Text style={styles.submitButtonText}>
+              {submitStatusText === 'sent'
+                ? '✅ भेज दिया गया (Sent)'
+                : submitStatusText === 'sending'
+                ? 'भेज रहे हैं... (Sending)'
+                : 'जमा करें (Submit Daily Record)'}
+            </Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -444,6 +702,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#38BDF8',
   },
+  audioDurationBadge: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#34D399',
+    backgroundColor: 'rgba(52, 211, 153, 0.1)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
   sectionHint: {
     fontSize: 13,
     color: '#94A3B8',
@@ -464,7 +731,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#334155',
-    minHeight: 80, // Minimum 48px standard
+    minHeight: 80,
     justifyContent: 'center',
   },
   statusButtonActiveFull: {
@@ -513,6 +780,29 @@ const styles = StyleSheet.create({
   photoThumbnail: {
     width: '100%',
     height: '100%',
+  },
+  devMockBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: '#F59E0B',
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    borderRadius: 4,
+    zIndex: 10,
+  },
+  devMockBadgeAudio: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  devMockBadgeText: {
+    color: '#000000',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   deletePhotoButton: {
     position: 'absolute',
@@ -569,6 +859,197 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#94A3B8',
   },
+  // Voice Recording Styles
+  startRecordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 64,
+  },
+  micIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  micIconText: {
+    fontSize: 22,
+  },
+  startRecordTextContainer: {
+    flex: 1,
+  },
+  startRecordTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  startRecordSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  recordingActiveCard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    alignItems: 'center',
+  },
+  recordingPulseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    marginRight: 8,
+  },
+  recordingLiveText: {
+    color: '#EF4444',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  recordingTimerText: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '900',
+    fontFamily: 'monospace',
+    marginVertical: 4,
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: '#334155',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginVertical: 10,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#EF4444',
+  },
+  stopRecordingButton: {
+    backgroundColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    marginTop: 6,
+    width: '100%',
+    minHeight: 48,
+  },
+  stopRecordingIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  stopRecordingText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  recordedAudioPreviewCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
+  },
+  audioPreviewInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  audioIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  audioBoxIcon: {
+    fontSize: 22,
+  },
+  audioMetaColumn: {
+    flex: 1,
+  },
+  audioMetaTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  audioFileTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  audioFileSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  audioActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  playAudioButton: {
+    flex: 1.4,
+    backgroundColor: '#0284C7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    minHeight: 48,
+  },
+  playAudioButtonActive: {
+    backgroundColor: '#F59E0B',
+  },
+  playAudioIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  playAudioText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  deleteAudioButton: {
+    flex: 1,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    minHeight: 48,
+  },
+  deleteAudioIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  deleteAudioText: {
+    color: '#F87171',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  // Chips Styles
   chipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -581,7 +1062,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: '#334155',
-    minHeight: 48, // Accessibility touch target
+    minHeight: 48,
     justifyContent: 'center',
   },
   chipButtonSelected: {

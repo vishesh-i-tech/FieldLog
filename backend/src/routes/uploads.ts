@@ -35,7 +35,15 @@ export const uploadRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
     // Validate MIME types
     const allowedPhotoMimes = ['image/jpeg', 'image/png', 'image/webp'];
-    const allowedAudioMimes = ['audio/m4a', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/mpeg'];
+    const allowedAudioMimes = [
+      'audio/m4a',
+      'audio/mp4',
+      'audio/aac',
+      'audio/x-m4a',
+      'audio/mpeg',
+      'audio/webm',
+      'audio/wav',
+    ];
 
     if (kind === 'photo' && !allowedPhotoMimes.includes(mimeType.toLowerCase())) {
       return reply.status(400).send({

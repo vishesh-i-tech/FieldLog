@@ -212,6 +212,52 @@ test('Phase 3 Daily Record: Submission, Idempotency, Same-Day Edits, and Media',
     const detailData = JSON.parse(detailRes.payload);
     assert.strictEqual(detailData.media.length, 1);
     assert.strictEqual(detailData.media[0].storageKey, presignData.storageKey);
+
+    // 11. Phase 4: Voice Note Presign and Audio Submission
+    const audioPresignRes = await server.inject({
+      method: 'POST',
+      url: '/api/v1/uploads/presign',
+      headers: { authorization: `Bearer ${supervisorToken}` },
+      payload: { siteId, kind: 'audio', mimeType: 'audio/webm' },
+    });
+    assert.strictEqual(audioPresignRes.statusCode, 200);
+    const audioPresignData = JSON.parse(audioPresignRes.payload);
+    assert.ok(audioPresignData.uploadUrl);
+    assert.ok(audioPresignData.storageKey);
+
+    const clientUuid3 = randomUUID();
+    const submitAudioRes = await server.inject({
+      method: 'POST',
+      url: '/api/v1/records',
+      headers: { authorization: `Bearer ${supervisorToken}` },
+      payload: {
+        clientId: clientUuid3,
+        siteId,
+        recordDate: todayDate,
+        status: 'full',
+        capturedAt: new Date().toISOString(),
+        audio: {
+          storageKey: audioPresignData.storageKey,
+          mimeType: 'audio/webm',
+          sizeBytes: 125000,
+          durationSeconds: 28,
+        },
+      },
+    });
+    assert.strictEqual(submitAudioRes.statusCode, 200);
+    const submitAudioData = JSON.parse(submitAudioRes.payload);
+    assert.strictEqual(submitAudioData.record.missingVoice, false);
+
+    const detailWithAudioRes = await server.inject({
+      method: 'GET',
+      url: `/api/v1/records/${recordId}`,
+      headers: { authorization: `Bearer ${supervisorToken}` },
+    });
+    const detailWithAudio = JSON.parse(detailWithAudioRes.payload);
+    const audioMedia = detailWithAudio.media.find((m: any) => m.kind === 'audio');
+    assert.ok(audioMedia, 'Audio media record must be present');
+    assert.strictEqual(audioMedia.storageKey, audioPresignData.storageKey);
+    assert.strictEqual(audioMedia.durationSeconds, 28);
   } finally {
     if (orgId) await db.delete(organizations).where(eq(organizations.id, orgId));
   }

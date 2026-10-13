@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 /**
  * Application environment configuration
  */
@@ -10,8 +12,13 @@ function resolveApiBaseUrl(): string {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // Development fallback to local laptop Wi-Fi
+  // Development mode fallback
   if (__DEV__) {
+    // When previewing in browser on laptop, talk directly to localhost:4000
+    if (Platform.OS === 'web') {
+      return 'http://localhost:4000';
+    }
+    // When running on physical phone over Wi-Fi
     return `http://${LOCAL_DEV_IP}`;
   }
 
