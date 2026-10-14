@@ -30,7 +30,7 @@ import {
 } from '../src/services/audio.service';
 import { generateUuidV4 } from '../src/utils/uuid';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
-import { t } from '../src/i18n';
+import { useLanguage } from '../src/i18n';
 import {
   initAuthSession,
   getCurrentUser,
@@ -49,6 +49,7 @@ interface IssueChip {
 
 export default function RecordSubmissionScreen() {
   const router = useRouter();
+  const { lang, changeLanguage, t } = useLanguage();
   const [supervisorName, setSupervisorName] = useState('Field Supervisor');
 
   // Selected work place details
@@ -85,7 +86,7 @@ export default function RecordSubmissionScreen() {
   const [submitStatusText, setSubmitStatusText] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const todayDateStr = new Date().toLocaleDateString('hi-IN', {
+  const todayDateStr = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -161,7 +162,10 @@ export default function RecordSubmissionScreen() {
   // Open Live Camera Viewfinder (Native: expo-camera, Web: Dev Mock)
   const handleOpenLiveCamera = async () => {
     if (photos.length >= 6) {
-      Alert.alert('अधिकतम फोटो', 'आप एक रिकॉर्ड में अधिकतम 6 फोटो जोड़ सकते हैं। (Max 6 photos)');
+      Alert.alert(
+        lang === 'hi' ? 'अधिकतम फोटो' : 'Maximum Photos',
+        t('maxPhotosAlert')
+      );
       return;
     }
 
@@ -179,7 +183,10 @@ export default function RecordSubmissionScreen() {
     if (!permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
-        Alert.alert('कैमरा अनुमति आवश्यक है', 'लाइव फोटो खींचने के लिए कैमरा अनुमति दें।');
+        Alert.alert(
+          lang === 'hi' ? 'कैमरा अनुमति आवश्यक है' : 'Camera Permission Required',
+          lang === 'hi' ? 'लाइव फोटो खींचने के लिए कैमरा अनुमति दें।' : 'Please grant camera access to capture site photos.'
+        );
         return;
       }
     }
@@ -220,7 +227,10 @@ export default function RecordSubmissionScreen() {
       setPhotos((prev) => [...prev, newPhoto]);
     } catch (err) {
       console.error('Camera capture error:', err);
-      Alert.alert('त्रुटि', 'फोटो खींचने में समस्या आई। कृपया पुनः प्रयास करें।');
+      Alert.alert(
+        lang === 'hi' ? 'त्रुटि' : 'Error',
+        lang === 'hi' ? 'फोटो खींचने में समस्या आई। कृपया पुनः प्रयास करें।' : 'Failed to capture photo. Please try again.'
+      );
       setCameraVisible(false);
     }
   };
@@ -235,7 +245,10 @@ export default function RecordSubmissionScreen() {
     try {
       const hasPermission = await requestMicrophonePermission();
       if (!hasPermission && !__DEV__) {
-        Alert.alert('माइक अनुमति आवश्यक है', 'आवाज रिकॉर्ड करने के लिए माइक्रोफोन की अनुमति दें।');
+        Alert.alert(
+          lang === 'hi' ? 'माइक अनुमति आवश्यक है' : 'Microphone Permission Required',
+          lang === 'hi' ? 'आवाज रिकॉर्ड करने के लिए माइक्रोफोन की अनुमति दें।' : 'Please grant microphone access to record voice.'
+        );
         return;
       }
 
@@ -257,7 +270,7 @@ export default function RecordSubmissionScreen() {
       }, 1000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('रिकॉर्डिंग त्रुटि', msg);
+      Alert.alert(lang === 'hi' ? 'रिकॉर्डिंग त्रुटि' : 'Recording Error', msg);
     }
   };
 
@@ -273,7 +286,7 @@ export default function RecordSubmissionScreen() {
       setIsRecording(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('रिकॉर्डिंग सहेजने में त्रुटि', msg);
+      Alert.alert(lang === 'hi' ? 'रिकॉर्डिंग सहेजने में त्रुटि' : 'Audio Save Error', msg);
       setIsRecording(false);
     }
   };
@@ -309,18 +322,21 @@ export default function RecordSubmissionScreen() {
   // Submit Handler
   const handleSubmit = async () => {
     if (!status) {
-      Alert.alert('स्थिति चुनें', 'कृपया काम की स्थिति (पूरा दिन / आधा दिन / काम बंद) चुनें।');
+      Alert.alert(
+        lang === 'hi' ? 'स्थिति चुनें' : 'Select Status',
+        t('selectStatusAlert')
+      );
       return;
     }
 
     // Prompt if photo is missing
     if (photos.length === 0) {
       Alert.alert(
-        'फोटो के बिना भेजना है?',
-        'क्या आप बिना लाइव फोटो के यह रिकॉर्ड भेजना चाहते हैं?',
+        t('noPhotoAlert'),
+        t('noPhotoConfirm'),
         [
-          { text: 'फोटो लें', style: 'cancel' },
-          { text: 'हाँ, भेजें', onPress: checkVoicePrompt },
+          { text: t('takePhoto'), style: 'cancel' },
+          { text: t('yesSubmit'), onPress: checkVoicePrompt },
         ]
       );
       return;
@@ -332,11 +348,11 @@ export default function RecordSubmissionScreen() {
   const checkVoicePrompt = () => {
     if (!recordedAudio) {
       Alert.alert(
-        'आवाज संदेश नहीं है',
-        'क्या आप बिना आवाज रिकॉर्ड किए यह रिकॉर्ड जमा करना चाहते हैं?',
+        t('noVoiceAlert'),
+        t('noVoiceConfirm'),
         [
-          { text: 'आवाज रिकॉर्ड करें', style: 'cancel' },
-          { text: 'हाँ, भेजें', onPress: executeSubmission },
+          { text: t('recordVoice'), style: 'cancel' },
+          { text: t('yesSubmit'), onPress: executeSubmission },
         ]
       );
       return;
@@ -408,19 +424,23 @@ export default function RecordSubmissionScreen() {
       }
 
       setSubmitStatusText('sent');
-      const statusHindi = status === 'full' ? 'पूरा दिन' : status === 'half' ? 'आधा दिन' : 'काम बंद';
+      const statusLabel = status === 'full' ? t('statusFull') : status === 'half' ? t('statusHalf') : t('statusStopped');
       setSubmissionFeedback({
         type: 'success',
-        text: `रिकॉर्ड जमा हो गया! ✅ काम: ${siteName} (${statusHindi}) सर्वर पर सफलतापूर्वक सुरक्षित हो गया।`,
+        text: lang === 'hi'
+          ? `रिकॉर्ड जमा हो गया! ✅ काम: ${siteName} (${statusLabel}) सर्वर पर सफलतापूर्वक सुरक्षित हो गया।`
+          : `Record submitted successfully! ✅ Site: ${siteName} (${statusLabel}) saved to server.`,
       });
 
       if (Platform.OS === 'web') {
         setTimeout(() => router.push('/owner'), 1500);
       } else {
         Alert.alert(
-          'रिकॉर्ड जमा हो गया! ✅',
-          `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`,
-          [{ text: 'ठीक है', onPress: () => router.push('/owner') }]
+          lang === 'hi' ? 'रिकॉर्ड जमा हो गया! ✅' : 'Record Submitted! ✅',
+          lang === 'hi'
+            ? `काम: ${siteName}\nस्थिति: ${statusLabel}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`
+            : `Site: ${siteName}\nStatus: ${statusLabel}\nPhotos: ${photos.length}\nVoice Note: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'None'}\nSaved successfully to server.`,
+          [{ text: lang === 'hi' ? 'ठीक है' : 'OK', onPress: () => router.push('/owner') }]
         );
       }
     } catch (err: unknown) {
@@ -428,10 +448,10 @@ export default function RecordSubmissionScreen() {
       setSubmitStatusText('idle');
       setSubmissionFeedback({
         type: 'error',
-        text: `भेजने में त्रुटि: ${msg}`,
+        text: lang === 'hi' ? `भेजने में त्रुटि: ${msg}` : `Submission Error: ${msg}`,
       });
       if (Platform.OS !== 'web') {
-        Alert.alert('भेजने में त्रुटि', msg);
+        Alert.alert(lang === 'hi' ? 'भेजने में त्रुटि' : 'Submission Error', msg);
       }
     } finally {
       setSubmitting(false);
@@ -441,6 +461,31 @@ export default function RecordSubmissionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Top Control Bar with Language Switcher */}
+        <View style={styles.topControlRow}>
+          <View style={styles.userBadge}>
+            <Text style={styles.userBadgeText}>👷 {supervisorName}</Text>
+          </View>
+          <View style={styles.langToggleContainer}>
+            <TouchableOpacity
+              style={[styles.langButton, lang === 'en' && styles.langButtonActive]}
+              onPress={() => changeLanguage('en')}
+            >
+              <Text style={[styles.langButtonText, lang === 'en' && styles.langButtonTextActive]}>
+                English
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.langButton, lang === 'hi' && styles.langButtonActive]}
+              onPress={() => changeLanguage('hi')}
+            >
+              <Text style={[styles.langButtonText, lang === 'hi' && styles.langButtonTextActive]}>
+                हिंदी
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Switch to Owner Reviewer Mode Banner */}
         <TouchableOpacity
           style={styles.switchOwnerBanner}
@@ -456,8 +501,8 @@ export default function RecordSubmissionScreen() {
         >
           <Text style={styles.switchOwnerIcon}>👑</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.switchOwnerTitle}>मालिक / एडमिन मोड देखें</Text>
-            <Text style={styles.switchOwnerSub}>रिपोर्ट देखने वाला डैशबोर्ड (Owner Review View)</Text>
+            <Text style={styles.switchOwnerTitle}>{t('switchToOwner')}</Text>
+            <Text style={styles.switchOwnerSub}>{t('ownerSubtitle')}</Text>
           </View>
           <Text style={styles.switchOwnerArrow}>→</Text>
         </TouchableOpacity>
@@ -471,7 +516,7 @@ export default function RecordSubmissionScreen() {
 
         {/* 1. STATUS SELECTION (3 BIG BUTTONS) */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>1. काम की स्थिति चुनें (Status) *</Text>
+          <Text style={styles.sectionTitle}>{t('statusSectionTitle')}</Text>
           <View style={styles.statusButtonsContainer}>
             {/* Full Day */}
             <TouchableOpacity
@@ -484,9 +529,9 @@ export default function RecordSubmissionScreen() {
             >
               <Text style={styles.statusIcon}>🟢</Text>
               <Text style={[styles.statusText, status === 'full' && styles.statusTextActive]}>
-                पूरा दिन
+                {t('statusFull')}
               </Text>
-              <Text style={styles.statusSubtext}>Full Day</Text>
+              <Text style={styles.statusSubtext}>{t('statusFullSub')}</Text>
             </TouchableOpacity>
 
             {/* Half Day */}
@@ -500,9 +545,9 @@ export default function RecordSubmissionScreen() {
             >
               <Text style={styles.statusIcon}>🟡</Text>
               <Text style={[styles.statusText, status === 'half' && styles.statusTextActive]}>
-                आधा दिन
+                {t('statusHalf')}
               </Text>
-              <Text style={styles.statusSubtext}>Half Day</Text>
+              <Text style={styles.statusSubtext}>{t('statusHalfSub')}</Text>
             </TouchableOpacity>
 
             {/* Work Stopped */}
@@ -516,9 +561,9 @@ export default function RecordSubmissionScreen() {
             >
               <Text style={styles.statusIcon}>🔴</Text>
               <Text style={[styles.statusText, status === 'stopped' && styles.statusTextActive]}>
-                काम बंद
+                {t('statusStopped')}
               </Text>
-              <Text style={styles.statusSubtext}>Stopped</Text>
+              <Text style={styles.statusSubtext}>{t('statusStoppedSub')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -526,11 +571,11 @@ export default function RecordSubmissionScreen() {
         {/* 2. LIVE PHOTOS (NO GALLERY PICKER) */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>2. लाइव फोटो (Live Photos)</Text>
+            <Text style={styles.sectionTitle}>{t('photosSectionTitle')}</Text>
             <Text style={styles.photoCountText}>{photos.length}/6</Text>
           </View>
           <Text style={styles.sectionHint}>
-            लाइव कैमरा से फोटो लें (गैलरी से अपलोड नहीं हो सकता)। जीपीएस लोकेशन अपने आप जुड़ जाएगी।
+            {t('photosHint')}
           </Text>
 
           {/* Photos Grid */}
@@ -564,17 +609,17 @@ export default function RecordSubmissionScreen() {
                 activeOpacity={0.8}
               >
                 <Text style={styles.addPhotoIcon}>📷</Text>
-                <Text style={styles.addPhotoText}>लाइव फोटो लें</Text>
-                <Text style={styles.addPhotoSubtext}>Live Camera</Text>
+                <Text style={styles.addPhotoText}>{t('takeLivePhoto')}</Text>
+                <Text style={styles.addPhotoSubtext}>{t('liveCamera')}</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-        {/* 3. VOICE NOTE RECORDING (PHASE 4) */}
+        {/* 3. VOICE NOTE RECORDING */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>3. आवाज संदेश (Voice Note)</Text>
+            <Text style={styles.sectionTitle}>{t('voiceSectionTitle')}</Text>
             {recordedAudio && (
               <Text style={styles.audioDurationBadge}>
                 ⏱️ {formatTime(recordedAudio.durationSeconds)}
@@ -582,7 +627,7 @@ export default function RecordSubmissionScreen() {
             )}
           </View>
           <Text style={styles.sectionHint}>
-            आज के काम का ब्योरा बोलकर बताएं (अधिकतम 60 सेकंड)। मालिक यह आवाज सुन सकते हैं।
+            {t('voiceHint')}
           </Text>
 
           {/* Case A: Active Recording State */}
@@ -590,7 +635,7 @@ export default function RecordSubmissionScreen() {
             <View style={styles.recordingActiveCard}>
               <View style={styles.recordingPulseHeader}>
                 <View style={styles.recordingDot} />
-                <Text style={styles.recordingLiveText}>रिकॉर्डिंग चालू है... (Recording)</Text>
+                <Text style={styles.recordingLiveText}>{t('recording')}</Text>
               </View>
               <Text style={styles.recordingTimerText}>
                 {formatTime(recordingSeconds)} / 01:00
@@ -610,7 +655,7 @@ export default function RecordSubmissionScreen() {
                 activeOpacity={0.8}
               >
                 <Text style={styles.stopRecordingIcon}>⏹️</Text>
-                <Text style={styles.stopRecordingText}>रिकॉर्डिंग रोकें (Stop & Save)</Text>
+                <Text style={styles.stopRecordingText}>{t('stopRecording')}</Text>
               </TouchableOpacity>
             </View>
           ) : recordedAudio ? (
@@ -622,7 +667,7 @@ export default function RecordSubmissionScreen() {
                 </View>
                 <View style={styles.audioMetaColumn}>
                   <View style={styles.audioMetaTitleRow}>
-                    <Text style={styles.audioFileTitle}>आज का आवाज संदेश</Text>
+                    <Text style={styles.audioFileTitle}>{t('todayVoiceNote')}</Text>
                     {recordedAudio.isDevMock && (
                       <View style={styles.devMockBadgeAudio}>
                         <Text style={styles.devMockBadgeText}>DEV MOCK</Text>
@@ -630,7 +675,7 @@ export default function RecordSubmissionScreen() {
                     )}
                   </View>
                   <Text style={styles.audioFileSub}>
-                    लंबाई: {formatTime(recordedAudio.durationSeconds)} • {(recordedAudio.sizeBytes / 1024).toFixed(0)} KB
+                    {lang === 'hi' ? 'लंबाई: ' : 'Duration: '}{formatTime(recordedAudio.durationSeconds)} • {(recordedAudio.sizeBytes / 1024).toFixed(0)} KB
                   </Text>
                 </View>
               </View>
@@ -647,7 +692,7 @@ export default function RecordSubmissionScreen() {
                 >
                   <Text style={styles.playAudioIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
                   <Text style={styles.playAudioText}>
-                    {isPlayingAudio ? 'रोकें (Pause)' : 'सुनें (Play Preview)'}
+                    {isPlayingAudio ? t('pause') : t('playPreview')}
                   </Text>
                 </TouchableOpacity>
 
@@ -657,7 +702,7 @@ export default function RecordSubmissionScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.deleteAudioIcon}>🗑️</Text>
-                  <Text style={styles.deleteAudioText}>हटाएं (Re-record)</Text>
+                  <Text style={styles.deleteAudioText}>{t('reRecord')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -672,9 +717,9 @@ export default function RecordSubmissionScreen() {
                 <Text style={styles.micIconText}>🎙️</Text>
               </View>
               <View style={styles.startRecordTextContainer}>
-                <Text style={styles.startRecordTitle}>माइक दबाकर बोलें</Text>
+                <Text style={styles.startRecordTitle}>{t('tapToRecord')}</Text>
                 <Text style={styles.startRecordSubtitle}>
-                  Tap to record voice (Max 60 sec)
+                  {t('tapToRecordSub')}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -683,12 +728,15 @@ export default function RecordSubmissionScreen() {
 
         {/* 4. ISSUE CHIPS (MULTI-SELECT) */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>4. कोई समस्या है? (Issue Chips)</Text>
-          <Text style={styles.sectionHint}>यदि कोई समस्या है तो चुनें (वैकल्पिक / Optional):</Text>
+          <Text style={styles.sectionTitle}>{t('issuesSectionTitle')}</Text>
+          <Text style={styles.sectionHint}>{t('issuesHint')}</Text>
 
           <View style={styles.chipsContainer}>
             {issueChips.map((chip) => {
               const isSelected = selectedIssueIds.includes(chip.id);
+              const primaryLabel = lang === 'hi' ? chip.labelHi : (chip.labelEn || chip.labelHi);
+              const secondaryLabel = lang === 'hi' ? chip.labelEn : chip.labelHi;
+
               return (
                 <TouchableOpacity
                   key={chip.id}
@@ -697,11 +745,13 @@ export default function RecordSubmissionScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {chip.labelHi}
+                    {primaryLabel}
                   </Text>
-                  <Text style={[styles.chipSubtext, isSelected && styles.chipSubtextSelected]}>
-                    {chip.labelEn}
-                  </Text>
+                  {secondaryLabel && (
+                    <Text style={[styles.chipSubtext, isSelected && styles.chipSubtextSelected]}>
+                      {secondaryLabel}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -743,10 +793,10 @@ export default function RecordSubmissionScreen() {
           ) : (
             <Text style={styles.submitButtonText}>
               {submitStatusText === 'sent'
-                ? '✅ भेज दिया गया (Sent)'
+                ? `✅ ${t('sent')}`
                 : submitStatusText === 'sending'
-                ? 'भेज रहे हैं... (Sending)'
-                : 'जमा करें (Submit Daily Record)'}
+                ? t('submitting')
+                : t('submit')}
             </Text>
           )}
         </TouchableOpacity>
@@ -761,7 +811,7 @@ export default function RecordSubmissionScreen() {
                 style={styles.closeCameraButton}
                 onPress={() => setCameraVisible(false)}
               >
-                <Text style={styles.closeCameraText}>✕ बंद करें</Text>
+                <Text style={styles.closeCameraText}>✕ {t('close')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -787,6 +837,49 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     paddingBottom: 40,
+  },
+  topControlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  userBadge: {
+    backgroundColor: '#1E293B',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  userBadgeText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  langToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderRadius: 20,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  langButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  langButtonActive: {
+    backgroundColor: '#2563EB',
+  },
+  langButtonText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  langButtonTextActive: {
+    color: '#FFFFFF',
   },
   switchOwnerBanner: {
     flexDirection: 'row',

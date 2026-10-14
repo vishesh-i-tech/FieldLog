@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
+import { useLanguage } from '../src/i18n';
 
 import {
   initAuthSession,
@@ -69,6 +70,7 @@ interface RecordDetail {
 
 export default function OwnerDashboard() {
   const router = useRouter();
+  const { lang, changeLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [ownerName, setOwnerName] = useState('Business Owner');
@@ -167,11 +169,11 @@ export default function OwnerDashboard() {
       case 'stopped':
         return { labelHi: 'काम बंद', labelEn: 'Stopped', color: '#EF4444', bg: 'rgba(239,68,68,0.15)' };
       default:
-        return { labelHi: 'पेंडिंग', labelEn: 'Pending', color: '#94A3B8', bg: 'rgba(148,163,184,0.15)' };
+        return { labelHi: 'बाकी है', labelEn: 'Pending', color: '#94A3B8', bg: 'rgba(148,163,184,0.15)' };
     }
   };
 
-  const todayDisplayDate = new Date().toLocaleDateString('hi-IN', {
+  const todayDisplayDate = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -184,9 +186,30 @@ export default function OwnerDashboard() {
       <View style={styles.topNav}>
         <View>
           <Text style={styles.companyName}>{companyName}</Text>
-          <Text style={styles.ownerGreeting}>नमस्ते, {ownerName} 👋</Text>
+          <Text style={styles.ownerGreeting}>
+            {lang === 'hi' ? `नमस्ते, ${ownerName} 👋` : `Hello, ${ownerName} 👋`}
+          </Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          <View style={styles.langToggleContainer}>
+            <TouchableOpacity
+              style={[styles.langButton, lang === 'en' && styles.langButtonActive]}
+              onPress={() => changeLanguage('en')}
+            >
+              <Text style={[styles.langButtonText, lang === 'en' && styles.langButtonTextActive]}>
+                EN
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.langButton, lang === 'hi' && styles.langButtonActive]}
+              onPress={() => changeLanguage('hi')}
+            >
+              <Text style={[styles.langButtonText, lang === 'hi' && styles.langButtonTextActive]}>
+                HI
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={async () => {
@@ -199,7 +222,7 @@ export default function OwnerDashboard() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.switchModeText}>📝 सुपरवाइज़र</Text>
+            <Text style={styles.switchModeText}>📝 {t('switchToSupervisor')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.logoutNavButton}
@@ -209,7 +232,7 @@ export default function OwnerDashboard() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.logoutNavText}>🚪 लॉग आउट</Text>
+            <Text style={styles.logoutNavText}>🚪 {t('logout')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -218,7 +241,7 @@ export default function OwnerDashboard() {
         {/* Date & Refresh Banner */}
         <View style={styles.dateBanner}>
           <View>
-            <Text style={styles.dateHeading}>आज का दिन (Daily Overview)</Text>
+            <Text style={styles.dateHeading}>{t('dailyOverview')}</Text>
             <Text style={styles.dateSubtext}>📅 {todayDisplayDate}</Text>
           </View>
           <TouchableOpacity
@@ -229,7 +252,7 @@ export default function OwnerDashboard() {
             }}
           >
             <Text style={styles.refreshIcon}>{refreshing ? '⏳' : '🔄'}</Text>
-            <Text style={styles.refreshText}>रिफ्रेश</Text>
+            <Text style={styles.refreshText}>{t('refresh')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -238,48 +261,49 @@ export default function OwnerDashboard() {
           <View style={[styles.metricCard, { borderColor: '#10B981' }]}>
             <Text style={styles.metricEmoji}>🟢</Text>
             <Text style={[styles.metricCount, { color: '#10B981' }]}>{fullDayCount}</Text>
-            <Text style={styles.metricLabel}>पूरा दिन</Text>
-            <Text style={styles.metricSubLabel}>Full Day</Text>
+            <Text style={styles.metricLabel}>{t('statusFull')}</Text>
+            <Text style={styles.metricSubLabel}>{t('statusFullSub')}</Text>
           </View>
 
           <View style={[styles.metricCard, { borderColor: '#F59E0B' }]}>
             <Text style={styles.metricEmoji}>🟡</Text>
             <Text style={[styles.metricCount, { color: '#F59E0B' }]}>{halfDayCount}</Text>
-            <Text style={styles.metricLabel}>आधा दिन</Text>
-            <Text style={styles.metricSubLabel}>Half Day</Text>
+            <Text style={styles.metricLabel}>{t('statusHalf')}</Text>
+            <Text style={styles.metricSubLabel}>{t('statusHalfSub')}</Text>
           </View>
 
           <View style={[styles.metricCard, { borderColor: '#EF4444' }]}>
             <Text style={styles.metricEmoji}>🔴</Text>
             <Text style={[styles.metricCount, { color: '#EF4444' }]}>{stoppedCount}</Text>
-            <Text style={styles.metricLabel}>काम बंद</Text>
-            <Text style={styles.metricSubLabel}>Stopped</Text>
+            <Text style={styles.metricLabel}>{t('statusStopped')}</Text>
+            <Text style={styles.metricSubLabel}>{t('statusStoppedSub')}</Text>
           </View>
 
           <View style={[styles.metricCard, { borderColor: '#64748B' }]}>
             <Text style={styles.metricEmoji}>⏳</Text>
             <Text style={[styles.metricCount, { color: '#94A3B8' }]}>{pendingCount}</Text>
-            <Text style={styles.metricLabel}>बाकी है</Text>
+            <Text style={styles.metricLabel}>{t('statusPending')}</Text>
             <Text style={styles.metricSubLabel}>Pending</Text>
           </View>
         </View>
 
         {/* Work Places List Heading */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>कार्यस्थल रिपोर्ट (Site Submissions)</Text>
+          <Text style={styles.sectionTitle}>{t('siteSubmissions')}</Text>
           <Text style={styles.sectionBadge}>
-            {submittedCount}/{totalSites} रिपोर्ट प्राप्त
+            {submittedCount}/{totalSites} {t('reportsReceived')}
           </Text>
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#3B82F6" />
-            <Text style={styles.loadingText}>कार्यस्थलों का डेटा लोड हो रहा है...</Text>
+            <Text style={styles.loadingText}>{t('loadingSites')}</Text>
           </View>
         ) : (
           sitesData.map((item, idx) => {
             const badge = getStatusBadge(item.record?.status);
+            const badgeLabel = lang === 'hi' ? badge.labelHi : badge.labelEn;
             const isSeen = item.record ? !!acknowledgedRecords[item.record.id] : false;
 
             return (
@@ -301,14 +325,14 @@ export default function OwnerDashboard() {
                     <Text style={styles.siteCardName}>{item.siteName}</Text>
                     <Text style={styles.siteCardSub}>
                       {item.record
-                        ? `⏱️ रिपोर्ट समय: ${new Date(item.record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                        : '⚠️ अभी तक कोई रिपोर्ट नहीं आई (Pending)'}
+                        ? `⏱️ ${t('reportTime')}: ${new Date(item.record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                        : t('noReportYet')}
                     </Text>
                   </View>
 
                   <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.color }]}>
                     <Text style={[styles.statusBadgeText, { color: badge.color }]}>
-                      {badge.labelHi}
+                      {badgeLabel}
                     </Text>
                   </View>
                 </View>
@@ -318,27 +342,27 @@ export default function OwnerDashboard() {
                   <View style={styles.featurePillsRow}>
                     {!item.record.missingPhoto ? (
                       <View style={styles.featurePill}>
-                        <Text style={styles.featurePillText}>📸 फोटो मौजूद</Text>
+                        <Text style={styles.featurePillText}>📸 {lang === 'hi' ? 'फोटो मौजूद' : 'Photo Attached'}</Text>
                       </View>
                     ) : (
                       <View style={[styles.featurePill, styles.featurePillMissing]}>
-                        <Text style={styles.featurePillMissingText}>📷 फोटो नहीं</Text>
+                        <Text style={styles.featurePillMissingText}>📷 {lang === 'hi' ? 'फोटो नहीं' : 'No Photo'}</Text>
                       </View>
                     )}
 
                     {!item.record.missingVoice ? (
                       <View style={[styles.featurePill, { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#3B82F6' }]}>
-                        <Text style={[styles.featurePillText, { color: '#60A5FA' }]}>🎙️ आवाज़ संदेश</Text>
+                        <Text style={[styles.featurePillText, { color: '#60A5FA' }]}>🎙️ {lang === 'hi' ? 'आवाज़ संदेश' : 'Voice Note'}</Text>
                       </View>
                     ) : null}
 
                     <View style={[styles.featurePill, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: '#10B981' }]}>
-                      <Text style={[styles.featurePillText, { color: '#34D399' }]}>📍 GPS वेरिफाइड</Text>
+                      <Text style={[styles.featurePillText, { color: '#34D399' }]}>📍 {t('gpsVerified')}</Text>
                     </View>
 
                     {isSeen && (
                       <View style={[styles.featurePill, { backgroundColor: 'rgba(139,92,246,0.15)', borderColor: '#8B5CF6' }]}>
-                        <Text style={[styles.featurePillText, { color: '#A78BFA' }]}>✓ देखा गया</Text>
+                        <Text style={[styles.featurePillText, { color: '#A78BFA' }]}>✓ {t('markReviewed')}</Text>
                       </View>
                     )}
                   </View>
@@ -346,11 +370,15 @@ export default function OwnerDashboard() {
 
                 {item.record ? (
                   <View style={styles.viewDetailRow}>
-                    <Text style={styles.viewDetailText}>पूरा ब्योरा देखें (फोटो व आवाज़) →</Text>
+                    <Text style={styles.viewDetailText}>
+                      {lang === 'hi' ? 'पूरा ब्योरा देखें (फोटो व आवाज़) →' : 'View Full Details (Photo & Voice) →'}
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.pendingActionRow}>
-                    <Text style={styles.pendingActionText}>सुपरवाइज़र को 5:00 PM पर ऑटो रिमाइंडर जाएगा</Text>
+                    <Text style={styles.pendingActionText}>
+                      {lang === 'hi' ? 'सुपरवाइज़र को 5:00 PM पर ऑटो रिमाइंडर जाएगा' : 'Auto-reminder scheduled for supervisor at 5:00 PM'}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -360,12 +388,19 @@ export default function OwnerDashboard() {
 
         {/* 7-Day History Preview Card */}
         <View style={styles.historyCard}>
-          <Text style={styles.historyCardTitle}>📊 पिछले 7 दिनों का ट्रेंड (7-Day Consistency)</Text>
+          <Text style={styles.historyCardTitle}>
+            📊 {lang === 'hi' ? 'पिछले 7 दिनों का ट्रेंड (7-Day Consistency)' : '7-Day Activity & Attendance Trend'}
+          </Text>
           <Text style={styles.historyCardSubtitle}>
-            मालिक सभी कार्यस्थलों की पिछले 7 दिनों की हाज़िरी एक नज़र में देख सकते हैं:
+            {lang === 'hi'
+              ? 'मालिक सभी कार्यस्थलों की पिछले 7 दिनों की हाज़िरी एक नज़र में देख सकते हैं:'
+              : 'Overview of site submissions over the past 7 days across all locations:'}
           </Text>
           <View style={styles.historyGridRow}>
-            {['गुरु', 'शुक्र', 'शनि', 'रवि', 'सोम', 'मंगल', 'बुध (आज)'].map((day, idx) => {
+            {(lang === 'hi'
+              ? ['गुरु', 'शुक्र', 'शनि', 'रवि', 'सोम', 'मंगल', 'बुध (आज)']
+              : ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed (Today)']
+            ).map((day, idx) => {
               const colors = ['#10B981', '#10B981', '#F59E0B', '#EF4444', '#10B981', '#10B981', '#10B981'];
               return (
                 <View key={idx} style={styles.historyDayCol}>
@@ -382,7 +417,9 @@ export default function OwnerDashboard() {
           style={styles.diagnosticLink}
           onPress={() => router.push('/')}
         >
-          <Text style={styles.diagnosticLinkText}>⚙️ सिस्टम हेल्थ व नेटवर्क सेटिंग्स खोलें</Text>
+          <Text style={styles.diagnosticLinkText}>
+            ⚙️ {lang === 'hi' ? 'सिस्टम हेल्थ व नेटवर्क सेटिंग्स खोलें' : 'Open System Health & Network Diagnostics'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -399,7 +436,9 @@ export default function OwnerDashboard() {
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalSiteName}>{selectedSiteName}</Text>
-                <Text style={styles.modalDate}>दैनिक रिपोर्ट ब्योरा • {todayDisplayDate}</Text>
+                <Text style={styles.modalDate}>
+                  {lang === 'hi' ? `दैनिक रिपोर्ट ब्योरा • ${todayDisplayDate}` : `Daily Record Inspection • ${todayDisplayDate}`}
+                </Text>
               </View>
               <TouchableOpacity
                 style={styles.modalCloseButton}
@@ -412,13 +451,15 @@ export default function OwnerDashboard() {
             {detailLoading ? (
               <View style={styles.modalLoading}>
                 <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={styles.loadingText}>विस्तृत रिपोर्ट लोड हो रही है...</Text>
+                <Text style={styles.loadingText}>
+                  {lang === 'hi' ? 'विस्तृत रिपोर्ट लोड हो रही है...' : 'Loading detailed report...'}
+                </Text>
               </View>
             ) : recordDetail ? (
               <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
                 {/* 1. Status Section */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>1. आज की स्थिति (Status)</Text>
+                  <Text style={styles.modalSectionLabel}>1. {t('statusLabel')}</Text>
                   <View style={styles.modalStatusRow}>
                     <View
                       style={[
@@ -453,10 +494,10 @@ export default function OwnerDashboard() {
                         ]}
                       >
                         {recordDetail.record.status === 'full'
-                          ? '🟢 पूरा दिन काम हुआ (Full Day)'
+                          ? (lang === 'hi' ? '🟢 पूरा दिन काम हुआ (Full Day)' : '🟢 Full Day Work Completed')
                           : recordDetail.record.status === 'half'
-                          ? '🟡 आधा दिन काम हुआ (Half Day)'
-                          : '🔴 काम बंद रहा (Work Stopped)'}
+                          ? (lang === 'hi' ? '🟡 आधा दिन काम हुआ (Half Day)' : '🟡 Half Day Work (Partial Shift)')
+                          : (lang === 'hi' ? '🔴 काम बंद रहा (Work Stopped)' : '🔴 Work Stopped / Halted')}
                       </Text>
                     </View>
                   </View>
@@ -464,7 +505,9 @@ export default function OwnerDashboard() {
 
                 {/* 2. Voice Note Player */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>2. सुपरवाइज़र का आवाज़ संदेश (Voice Note)</Text>
+                  <Text style={styles.modalSectionLabel}>
+                    2. {lang === 'hi' ? 'सुपरवाइज़र का आवाज़ संदेश (Voice Note)' : 'Supervisor Voice Note'}
+                  </Text>
                   <View style={styles.voicePlayerCard}>
                     <TouchableOpacity
                       style={styles.playButton}
@@ -475,9 +518,13 @@ export default function OwnerDashboard() {
                     </TouchableOpacity>
                     <View style={styles.voiceTrackInfo}>
                       <Text style={styles.voiceTrackTitle}>
-                        {isPlayingAudio ? '🔊 आवाज़ बज रही है (Playing...)' : '🎙️ आवाज़ संदेश सुनें'}
+                        {isPlayingAudio
+                          ? (lang === 'hi' ? '🔊 आवाज़ बज रही है (Playing...)' : '🔊 Playing Audio...')
+                          : (lang === 'hi' ? '🎙️ आवाज़ संदेश सुनें' : '🎙️ Play Voice Note')}
                       </Text>
-                      <Text style={styles.voiceTrackTime}>अवधि: 0:42 सेकंड • हिंदी बोल</Text>
+                      <Text style={styles.voiceTrackTime}>
+                        {lang === 'hi' ? 'अवधि: 0:42 सेकंड' : 'Duration: 0:42 seconds'}
+                      </Text>
                       <View style={styles.waveformSimulator}>
                         {[40, 70, 30, 90, 60, 100, 45, 80, 55, 95, 35, 75, 50, 85, 30, 60].map(
                           (h, i) => (
@@ -500,7 +547,9 @@ export default function OwnerDashboard() {
 
                 {/* 3. Site Photos with GPS Stamp */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>3. कार्यस्थल की लाइव फोटो (Live Camera & GPS)</Text>
+                  <Text style={styles.modalSectionLabel}>
+                    3. {lang === 'hi' ? 'कार्यस्थल की लाइव फोटो (Live Camera & GPS)' : 'Live Site Photos (In-App Camera & GPS)'}
+                  </Text>
                   {recordDetail.media && recordDetail.media.filter((m) => m.kind === 'photo').length > 0 ? (
                     recordDetail.media
                       .filter((m) => m.kind === 'photo')
@@ -508,9 +557,11 @@ export default function OwnerDashboard() {
                         <View key={p.id || i} style={styles.photoContainer}>
                           <View style={styles.photoStubBox}>
                             <Text style={styles.photoIcon}>📸</Text>
-                            <Text style={styles.photoStubLabel}>लाइव कैमरा फोटो (In-App Capture)</Text>
+                            <Text style={styles.photoStubLabel}>
+                              {lang === 'hi' ? 'लाइव कैमरा फोटो (In-App Capture)' : 'Live Camera Photo (In-App Capture)'}
+                            </Text>
                             <Text style={styles.photoTime}>
-                              समय: {new Date(p.capturedAt).toLocaleTimeString()}
+                              {lang === 'hi' ? 'समय: ' : 'Time: '}{new Date(p.capturedAt).toLocaleTimeString()}
                             </Text>
                           </View>
                           {/* GPS Watermark badge */}
@@ -519,33 +570,39 @@ export default function OwnerDashboard() {
                               📍 Lat: {p.latitude || '28.6280'}, Long: {p.longitude || '77.3780'}
                             </Text>
                             <Text style={styles.watermarkSubtext}>
-                              सटीकता: ±{p.accuracyM || '8.5'}m • गैलरी अपलोड निषेध (Anti-Fraud Pass)
+                              {lang === 'hi'
+                                ? `सटीकता: ±${p.accuracyM || '8.5'}m • गैलरी अपलोड निषेध (Anti-Fraud Pass)`
+                                : `Accuracy: ±${p.accuracyM || '8.5'}m • Gallery Upload Blocked (Anti-Fraud Pass)`}
                             </Text>
                           </View>
                         </View>
                       ))
                   ) : (
                     <View style={styles.noDataBox}>
-                      <Text style={styles.noDataText}>इस रिकॉर्ड में कोई फोटो संलग्न नहीं है।</Text>
+                      <Text style={styles.noDataText}>
+                        {lang === 'hi' ? 'इस रिकॉर्ड में कोई फोटो संलग्न नहीं है।' : 'No photos attached in this record.'}
+                      </Text>
                     </View>
                   )}
                 </View>
 
                 {/* 4. Issues Reported */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>4. दर्ज की गई समस्याएं (Issues Reported)</Text>
+                  <Text style={styles.modalSectionLabel}>4. {t('issuesReported')}</Text>
                   {recordDetail.issues && recordDetail.issues.length > 0 ? (
                     <View style={styles.issuesRow}>
                       {recordDetail.issues.map((iss) => (
                         <View key={iss.id} style={styles.issueTag}>
                           <Text style={styles.issueTagText}>
-                            {iss.icon || '⚠️'} {iss.labelHi} ({iss.labelEn})
+                            {iss.icon || '⚠️'} {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
                           </Text>
                         </View>
                       ))}
                     </View>
                   ) : (
-                    <Text style={styles.noIssuesText}>✅ कोई समस्या दर्ज नहीं हुई (All Clear)</Text>
+                    <Text style={styles.noIssuesText}>
+                      ✅ {lang === 'hi' ? 'कोई समस्या दर्ज नहीं हुई (All Clear)' : 'No Issues Reported (All Clear)'}
+                    </Text>
                   )}
                 </View>
 
@@ -566,8 +623,8 @@ export default function OwnerDashboard() {
                 >
                   <Text style={styles.seenButtonText}>
                     {acknowledgedRecords[selectedRecordId!]
-                      ? '✓ देखा गया (Acknowledged)'
-                      : '✓ मालिक द्वारा स्वीकृत करें (Mark as Seen)'}
+                      ? `✓ ${lang === 'hi' ? 'देखा गया (Acknowledged)' : 'Report Acknowledged'}`
+                      : `✓ ${lang === 'hi' ? 'मालिक द्वारा स्वीकृत करें (Mark as Seen)' : 'Acknowledge & Mark as Reviewed'}`}
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -607,6 +664,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#F8FAFC',
     marginTop: 2,
+  },
+  langToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  langButton: {
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  langButtonActive: {
+    backgroundColor: '#2563EB',
+  },
+  langButtonText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  langButtonTextActive: {
+    color: '#FFFFFF',
   },
   switchModeButton: {
     backgroundColor: 'rgba(59,130,246,0.15)',

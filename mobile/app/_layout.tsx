@@ -29,14 +29,14 @@ export default function RootLayout() {
       <Stack.Screen
         name="record"
         options={{
-          title: "आज का रिकॉर्ड (Today's Record)",
+          title: "Today's Daily Record",
           headerShadowVisible: false,
         }}
       />
       <Stack.Screen
         name="owner"
         options={{
-          title: "मालिक डैशबोर्ड (Owner Review)",
+          title: "Owner Review Dashboard",
           headerShadowVisible: false,
         }}
       />
