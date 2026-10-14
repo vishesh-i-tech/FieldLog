@@ -216,19 +216,36 @@ export default function StatusScreen() {
           </Text>
         </View>
 
-        {/* Open Phase 3 Today's Record Screen Button */}
-        <TouchableOpacity
-          style={styles.openRecordButton}
-          onPress={() => router.push('/record')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.openRecordIcon}>📝</Text>
-          <View style={styles.openRecordTextContainer}>
-            <Text style={styles.openRecordTitle}>आज का रिकॉर्ड भरें</Text>
-            <Text style={styles.openRecordSubtitle}>Test Today's Record (Live Camera + GPS)</Text>
-          </View>
-          <Text style={styles.openRecordArrow}>→</Text>
-        </TouchableOpacity>
+        {/* Mode Navigation Buttons */}
+        <View style={styles.actionButtonsContainer}>
+          {/* 1. Open Phase 3 Today's Record Screen (Supervisor) */}
+          <TouchableOpacity
+            style={styles.openRecordButton}
+            onPress={() => router.push('/record')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.openRecordIcon}>📝</Text>
+            <View style={styles.openRecordTextContainer}>
+              <Text style={styles.openRecordTitle}>आज का रिकॉर्ड भरें</Text>
+              <Text style={styles.openRecordSubtitle}>सुपरवाइज़र मोड (Live Camera + GPS + Voice)</Text>
+            </View>
+            <Text style={styles.openRecordArrow}>→</Text>
+          </TouchableOpacity>
+
+          {/* 2. Open Owner Dashboard (Reviewer / Business Owner) */}
+          <TouchableOpacity
+            style={styles.openOwnerButton}
+            onPress={() => router.push('/owner')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.openRecordIcon}>👑</Text>
+            <View style={styles.openRecordTextContainer}>
+              <Text style={styles.openOwnerTitle}>मालिक / एडमिन डैशबोर्ड</Text>
+              <Text style={styles.openOwnerSubtitle}>रिपोर्ट देखने वाला मोड (Review All Sites & Voice Notes)</Text>
+            </View>
+            <Text style={styles.openRecordArrow}>→</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Phase Progress Notice */}
         <View style={styles.footerNotice}>
@@ -438,6 +455,35 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     marginLeft: 8,
+  },
+  actionButtonsContainer: {
+    marginBottom: 20,
+    gap: 12,
+  },
+  openOwnerButton: {
+    backgroundColor: '#7C3AED', // Royal Purple
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    minHeight: 64,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  openOwnerTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  openOwnerSubtitle: {
+    color: '#E9D5FF',
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
   },
   footerNotice: {
     padding: 16,

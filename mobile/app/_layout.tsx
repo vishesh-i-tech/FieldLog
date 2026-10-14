@@ -33,6 +33,13 @@ export default function RootLayout() {
           headerShadowVisible: false,
         }}
       />
+      <Stack.Screen
+        name="owner"
+        options={{
+          title: "मालिक डैशबोर्ड (Owner Review)",
+          headerShadowVisible: false,
+        }}
+      />
     </Stack>
   );
 

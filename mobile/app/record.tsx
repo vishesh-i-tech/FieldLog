@@ -348,6 +348,20 @@ export default function RecordSubmissionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Switch to Owner Reviewer Mode Banner */}
+        <TouchableOpacity
+          style={styles.switchOwnerBanner}
+          onPress={() => router.push('/owner')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.switchOwnerIcon}>👑</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.switchOwnerTitle}>मालिक / एडमिन मोड देखें</Text>
+            <Text style={styles.switchOwnerSub}>रिपोर्ट देखने वाला डैशबोर्ड (Owner Review View)</Text>
+          </View>
+          <Text style={styles.switchOwnerArrow}>→</Text>
+        </TouchableOpacity>
+
         {/* Work Place Header */}
         <View style={styles.siteHeaderCard}>
           <Text style={styles.siteLabel}>{t('siteName')}</Text>
@@ -650,6 +664,41 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     paddingBottom: 40,
+  },
+  switchOwnerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  switchOwnerIcon: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  switchOwnerTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  switchOwnerSub: {
+    color: '#E9D5FF',
+    fontSize: 11,
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  switchOwnerArrow: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 8,
   },
   siteHeaderCard: {
     backgroundColor: '#1E293B',
