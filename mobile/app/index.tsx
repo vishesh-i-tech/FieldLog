@@ -12,6 +12,11 @@ import {
 import { checkServerHealth, HealthCheckResponse } from '../src/api/client';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { useRouter } from 'expo-router';
+import {
+  initAuthSession,
+  clearAuthSession,
+  UserSession,
+} from '../src/services/auth.state';
 
 export default function StatusScreen() {
   const router = useRouter();
@@ -20,6 +25,7 @@ export default function StatusScreen() {
   const [loading, setLoading] = useState(false);
   const [healthData, setHealthData] = useState<HealthCheckResponse | null>(null);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
 
   const performHealthCheck = async (urlToTest = apiUrl) => {
     setLoading(true);
@@ -34,6 +40,7 @@ export default function StatusScreen() {
 
   useEffect(() => {
     performHealthCheck(apiUrl);
+    initAuthSession().then(setCurrentUser);
   }, []);
 
   const getStatusBadge = () => {
@@ -215,6 +222,44 @@ export default function StatusScreen() {
             Both devices must be on the same Wi-Fi. Default set to your laptop's Wi-Fi IP.
           </Text>
         </View>
+
+        {/* Auth Status Banner */}
+        {currentUser ? (
+          <View style={styles.authBannerLoggedIn}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.authBannerTitle}>
+                Signed in as: <Text style={{ color: '#38BDF8', fontWeight: '800' }}>{currentUser.name}</Text>
+              </Text>
+              <Text style={styles.authBannerSubtitle}>
+                Role: {currentUser.role === 'owner' ? '👑 Business Owner' : '👷 Field Supervisor'} • {currentUser.phone || currentUser.email}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.authBannerLogoutBtn}
+              onPress={async () => {
+                await clearAuthSession();
+                setCurrentUser(null);
+              }}
+            >
+              <Text style={styles.authBannerLogoutText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.authBannerLoggedOut}
+            onPress={() => router.push('/login')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.authBannerIcon}>🔐</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.authBannerLoginTitle}>Sign In / Register</Text>
+              <Text style={styles.authBannerLoginSub}>
+                Login as Business Owner (Email) or Supervisor (Phone/PIN)
+              </Text>
+            </View>
+            <Text style={styles.authBannerArrow}>→</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Mode Navigation Buttons */}
         <View style={styles.actionButtonsContainer}>
@@ -484,6 +529,71 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     fontWeight: '500',
+  },
+  authBannerLoggedIn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  authBannerTitle: {
+    fontSize: 14,
+    color: '#E2E8F0',
+    fontWeight: '600',
+  },
+  authBannerSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 3,
+  },
+  authBannerLogoutBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  authBannerLogoutText: {
+    color: '#F87171',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  authBannerLoggedOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    borderStyle: 'dashed',
+  },
+  authBannerIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  authBannerLoginTitle: {
+    color: '#60A5FA',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  authBannerLoginSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  authBannerArrow: {
+    color: '#60A5FA',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 8,
   },
   footerNotice: {
     padding: 16,

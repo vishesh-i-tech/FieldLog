@@ -31,6 +31,12 @@ import {
 import { generateUuidV4 } from '../src/utils/uuid';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { t } from '../src/i18n';
+import {
+  initAuthSession,
+  getCurrentUser,
+  getAuthTokens,
+  clearAuthSession,
+} from '../src/services/auth.state';
 
 interface IssueChip {
   id: string;
@@ -41,6 +47,7 @@ interface IssueChip {
 
 export default function RecordSubmissionScreen() {
   const router = useRouter();
+  const [supervisorName, setSupervisorName] = useState('Field Supervisor');
 
   // Selected work place details
   const [siteName, setSiteName] = useState('South Depot & Warehouse');
@@ -82,8 +89,34 @@ export default function RecordSubmissionScreen() {
     year: 'numeric',
   });
 
-  // Cleanup timers and playback on unmount
+  // Initialize supervisor auth and load assigned sites
   useEffect(() => {
+    initAuthSession().then(async (user) => {
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+      setSupervisorName(user.name);
+
+      const tokens = getAuthTokens();
+      if (tokens) {
+        try {
+          const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/today`, {
+            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.sites && data.sites.length > 0) {
+              setSiteName(data.sites[0].siteName);
+              setSiteId(data.sites[0].siteId);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load supervisor sites:', err);
+        }
+      }
+    });
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       stopAudioPlayback();
@@ -329,12 +362,29 @@ export default function RecordSubmissionScreen() {
         audio: audioPayload,
       };
 
+      const tokens = getAuthTokens();
+      if (tokens) {
+        const response = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokens.accessToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.message || 'Submission failed on server');
+        }
+      }
+
       setSubmitStatusText('sent');
 
       const statusHindi = status === 'full' ? 'पूरा दिन' : status === 'half' ? 'आधा दिन' : 'काम बंद';
       Alert.alert(
         'रिकॉर्ड जमा हो गया! ✅',
-        `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसफलतापूर्वक भेजा गया।`,
+        `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`,
         [{ text: 'ठीक है', onPress: () => router.back() }]
       );
     } catch (err: unknown) {

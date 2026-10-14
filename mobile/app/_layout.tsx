@@ -40,6 +40,13 @@ export default function RootLayout() {
           headerShadowVisible: false,
         }}
       />
+      <Stack.Screen
+        name="login"
+        options={{
+          title: "Sign In / Register",
+          headerShadowVisible: false,
+        }}
+      />
     </Stack>
   );
 

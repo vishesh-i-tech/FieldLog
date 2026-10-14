@@ -2,10 +2,11 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { eq, or } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { organizations, users } from '../db/schema.js';
+import { organizations, users, sites, siteAssignments } from '../db/schema.js';
 import {
   hashPassword,
   verifyPassword,
+  hashPin,
   verifyPin,
   generateTokens,
   verifyRefreshToken,
@@ -24,6 +25,13 @@ const ownerSignupSchema = z.object({
 const ownerLoginSchema = z.object({
   email: z.string().email('Valid email is required'),
   password: z.string().min(1, 'Password is required'),
+});
+
+const supervisorSignupSchema = z.object({
+  name: z.string().min(2, 'Name is required').max(255),
+  phone: z.string().min(8, 'Phone number is required').max(32),
+  pin: z.string().regex(/^\d{4}$/, 'PIN must be exactly 4 digits'),
+  organizationId: z.string().uuid().optional(),
 });
 
 const supervisorLoginSchema = z.object({
@@ -267,6 +275,102 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       },
       tokens,
     });
+  });
+
+  // 3b. Supervisor Signup
+  fastify.post('/api/v1/auth/supervisor/signup', async (request, reply) => {
+    const db = getDb();
+    if (!db) return reply.status(503).send({ error: 'Database unavailable' });
+
+    const parsed = supervisorSignupSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: parsed.error.issues[0]?.message || 'Validation failed',
+        details: parsed.error.issues,
+      });
+    }
+
+    const { name, phone, pin, organizationId } = parsed.data;
+
+    // Check if phone number already registered
+    const [existing] = await db.select().from(users).where(eq(users.phone, phone));
+    if (existing) {
+      return reply.status(409).send({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'An account with this phone number already exists',
+        code: 'USER_EXISTS',
+      });
+    }
+
+    // Resolve target organization
+    let targetOrgId = organizationId;
+    if (!targetOrgId) {
+      const [firstOrg] = await db.select().from(organizations).limit(1);
+      if (firstOrg) {
+        targetOrgId = firstOrg.id;
+      } else {
+        const [newOrg] = await db.insert(organizations).values({ name: 'FieldLog Workspace' }).returning();
+        targetOrgId = newOrg.id;
+      }
+    }
+
+    const pinHash = await hashPin(pin);
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        organizationId: targetOrgId,
+        role: 'supervisor',
+        name,
+        phone,
+        pinHash,
+        language: 'hi',
+        isActive: true,
+      })
+      .returning({
+        id: users.id,
+        organizationId: users.organizationId,
+        role: users.role,
+        name: users.name,
+        phone: users.phone,
+        language: users.language,
+      });
+
+    // Automatically assign supervisor to active sites in the organization
+    const orgSites = await db.select().from(sites).where(eq(sites.organizationId, targetOrgId));
+    for (const site of orgSites) {
+      try {
+        await db.insert(siteAssignments).values({
+          siteId: site.id,
+          userId: newUser.id,
+        });
+      } catch {
+        // Ignore duplicate assignment errors
+      }
+    }
+
+    const tokens = generateTokens({
+      userId: newUser.id,
+      organizationId: newUser.organizationId,
+      role: 'supervisor',
+      name: newUser.name,
+    });
+
+    return reply.status(201).send({
+      user: newUser,
+      tokens,
+    });
+  });
+
+  // Public: List Organizations for signup
+  fastify.get('/api/v1/auth/organizations', async (_request, reply) => {
+    const db = getDb();
+    if (!db) return reply.status(503).send({ error: 'Database unavailable' });
+
+    const orgs = await db.select({ id: organizations.id, name: organizations.name }).from(organizations);
+    return reply.status(200).send({ organizations: orgs });
   });
 
   // 4. Token Refresh

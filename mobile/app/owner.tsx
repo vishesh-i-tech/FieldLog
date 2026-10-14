@@ -13,6 +13,13 @@ import {
 import { useRouter } from 'expo-router';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 
+import {
+  initAuthSession,
+  getCurrentUser,
+  getAuthTokens,
+  clearAuthSession,
+} from '../src/services/auth.state';
+
 interface SiteTodayItem {
   siteId: string;
   siteName: string;
@@ -62,8 +69,8 @@ export default function OwnerDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [ownerName, setOwnerName] = useState('Vikram Malhotra');
-  const [companyName, setCompanyName] = useState('Apex Infra & Logistics');
+  const [ownerName, setOwnerName] = useState('Business Owner');
+  const [companyName, setCompanyName] = useState('My Organization');
   const [sitesData, setSitesData] = useState<SiteTodayItem[]>([]);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -73,28 +80,31 @@ export default function OwnerDashboard() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [acknowledgedRecords, setAcknowledgedRecords] = useState<Record<string, boolean>>({});
 
-  // 1. Authenticate as Dev Owner and load live data
+  // 1. Authenticate and load live data
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      // Auto-authenticate as dev owner
-      const loginRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/auth/owner/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'owner@fieldlog.dev',
-          password: 'Password123!',
-        }),
-      });
+      let user = getCurrentUser();
+      let tokens = getAuthTokens();
 
-      if (!loginRes.ok) {
-        throw new Error('Owner login failed');
+      if (!tokens || !user) {
+        user = await initAuthSession();
+        tokens = getAuthTokens();
       }
 
-      const loginData = await loginRes.json();
-      const accessToken = loginData.tokens.accessToken;
+      if (!tokens || !user) {
+        router.replace('/login');
+        return;
+      }
+
+      if (user.role !== 'owner') {
+        router.replace('/record');
+        return;
+      }
+
+      const accessToken = tokens.accessToken;
       setToken(accessToken);
-      setOwnerName(loginData.user.name || 'Vikram Malhotra');
+      setOwnerName(user.name);
 
       // Fetch today's records across all sites
       const recordsRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/today`, {
@@ -173,13 +183,25 @@ export default function OwnerDashboard() {
           <Text style={styles.companyName}>{companyName}</Text>
           <Text style={styles.ownerGreeting}>नमस्ते, {ownerName} 👋</Text>
         </View>
-        <TouchableOpacity
-          style={styles.switchModeButton}
-          onPress={() => router.push('/record')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.switchModeText}>📝 सुपरवाइज़र मोड</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          <TouchableOpacity
+            style={styles.switchModeButton}
+            onPress={() => router.push('/record')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.switchModeText}>📝 सुपरवाइज़र</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.logoutNavButton}
+            onPress={async () => {
+              await clearAuthSession();
+              router.replace('/login');
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.logoutNavText}>🚪 लॉग आउट</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -587,6 +609,19 @@ const styles = StyleSheet.create({
   switchModeText: {
     color: '#60A5FA',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  logoutNavButton: {
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  logoutNavText: {
+    color: '#F87171',
+    fontSize: 12,
     fontWeight: '700',
   },
   scrollContent: {
