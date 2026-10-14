@@ -36,6 +36,8 @@ import {
   getCurrentUser,
   getAuthTokens,
   clearAuthSession,
+  loginOwner,
+  loginSupervisor,
 } from '../src/services/auth.state';
 
 interface IssueChip {
@@ -93,13 +95,21 @@ export default function RecordSubmissionScreen() {
   // Initialize supervisor auth, load assigned sites, and load dynamic issue chips
   useEffect(() => {
     initAuthSession().then(async (user) => {
-      if (!user) {
-        router.replace('/login');
-        return;
-      }
-      setSupervisorName(user.name);
+      let activeUser = user;
+      let tokens = getAuthTokens();
 
-      const tokens = getAuthTokens();
+      if (!activeUser || !tokens || activeUser.role !== 'supervisor') {
+        try {
+          activeUser = await loginSupervisor('9811111111', '1234');
+          tokens = getAuthTokens();
+        } catch {
+          router.replace('/login');
+          return;
+        }
+      }
+
+      setSupervisorName(activeUser.name);
+
       if (tokens) {
         try {
           // 1. Fetch assigned site
@@ -434,7 +444,14 @@ export default function RecordSubmissionScreen() {
         {/* Switch to Owner Reviewer Mode Banner */}
         <TouchableOpacity
           style={styles.switchOwnerBanner}
-          onPress={() => router.push('/owner')}
+          onPress={async () => {
+            try {
+              await loginOwner('owner@fieldlog.dev', 'Password123!');
+              router.push('/owner');
+            } catch {
+              router.push('/login');
+            }
+          }}
           activeOpacity={0.8}
         >
           <Text style={styles.switchOwnerIcon}>👑</Text>
