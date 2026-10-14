@@ -41,7 +41,7 @@ const submitRecordSchema = z.object({
   missingPhoto: z.boolean().default(false),
   missingVoice: z.boolean().default(false),
   flags: z.record(z.any()).default({}),
-  issueTypeIds: z.array(z.string().uuid()).default([]),
+  issueTypeIds: z.array(z.string()).default([]),
   photos: z.array(photoSubmissionSchema).max(6, 'Maximum 6 photos per record').default([]),
   audio: audioSubmissionSchema.optional(),
 });
@@ -161,8 +161,10 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
       // 3. Sync issues (clear and re-link current active issues)
       await db.delete(recordIssues).where(eq(recordIssues.recordId, existingDayRecord.id));
-      if (issueTypeIds.length > 0) {
-        const issueRows = issueTypeIds.map((issueTypeId) => ({
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const validIssueIds = issueTypeIds.filter((id) => uuidRegex.test(id));
+      if (validIssueIds.length > 0) {
+        const issueRows = validIssueIds.map((issueTypeId) => ({
           recordId: existingDayRecord.id,
           issueTypeId,
         }));
@@ -225,8 +227,10 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       .returning();
 
     // Insert issue chips
-    if (issueTypeIds.length > 0) {
-      const issueRows = issueTypeIds.map((issueTypeId) => ({
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const validIssueIds = issueTypeIds.filter((id) => uuidRegex.test(id));
+    if (validIssueIds.length > 0) {
+      const issueRows = validIssueIds.map((issueTypeId) => ({
         recordId: newRecord.id,
         issueTypeId,
       }));

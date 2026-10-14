@@ -81,6 +81,7 @@ export default function RecordSubmissionScreen() {
   // Submission state
   const [submitting, setSubmitting] = useState(false);
   const [submitStatusText, setSubmitStatusText] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const todayDateStr = new Date().toLocaleDateString('hi-IN', {
     weekday: 'long',
@@ -89,7 +90,7 @@ export default function RecordSubmissionScreen() {
     year: 'numeric',
   });
 
-  // Initialize supervisor auth and load assigned sites
+  // Initialize supervisor auth, load assigned sites, and load dynamic issue chips
   useEffect(() => {
     initAuthSession().then(async (user) => {
       if (!user) {
@@ -101,6 +102,7 @@ export default function RecordSubmissionScreen() {
       const tokens = getAuthTokens();
       if (tokens) {
         try {
+          // 1. Fetch assigned site
           const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/today`, {
             headers: { Authorization: `Bearer ${tokens.accessToken}` },
           });
@@ -111,8 +113,24 @@ export default function RecordSubmissionScreen() {
               setSiteId(data.sites[0].siteId);
             }
           }
+
+          // 2. Fetch real database issue chips with valid UUIDs
+          const issuesRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/issue-types`, {
+            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          });
+          if (issuesRes.ok) {
+            const issuesData = await issuesRes.json();
+            if (issuesData.issueTypes && issuesData.issueTypes.length > 0) {
+              setIssueChips(issuesData.issueTypes.map((it: any) => ({
+                id: it.id,
+                labelHi: it.labelHi,
+                labelEn: it.labelEn,
+                icon: it.icon,
+              })));
+            }
+          }
         } catch (err) {
-          console.error('Failed to load supervisor sites:', err);
+          console.error('Failed to load supervisor data:', err);
         }
       }
     });
@@ -380,16 +398,31 @@ export default function RecordSubmissionScreen() {
       }
 
       setSubmitStatusText('sent');
-
       const statusHindi = status === 'full' ? 'पूरा दिन' : status === 'half' ? 'आधा दिन' : 'काम बंद';
-      Alert.alert(
-        'रिकॉर्ड जमा हो गया! ✅',
-        `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`,
-        [{ text: 'ठीक है', onPress: () => router.back() }]
-      );
+      setSubmissionFeedback({
+        type: 'success',
+        text: `रिकॉर्ड जमा हो गया! ✅ काम: ${siteName} (${statusHindi}) सर्वर पर सफलतापूर्वक सुरक्षित हो गया।`,
+      });
+
+      if (Platform.OS === 'web') {
+        setTimeout(() => router.push('/owner'), 1500);
+      } else {
+        Alert.alert(
+          'रिकॉर्ड जमा हो गया! ✅',
+          `काम: ${siteName}\nस्थिति: ${statusHindi}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`,
+          [{ text: 'ठीक है', onPress: () => router.push('/owner') }]
+        );
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('भेजने में त्रुटि', msg);
+      setSubmitStatusText('idle');
+      setSubmissionFeedback({
+        type: 'error',
+        text: `भेजने में त्रुटि: ${msg}`,
+      });
+      if (Platform.OS !== 'web') {
+        Alert.alert('भेजने में त्रुटि', msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -657,6 +690,29 @@ export default function RecordSubmissionScreen() {
             })}
           </View>
         </View>
+
+        {/* Submission Feedback Banner */}
+        {submissionFeedback && (
+          <View
+            style={[
+              styles.feedbackBanner,
+              submissionFeedback.type === 'success'
+                ? styles.feedbackBannerSuccess
+                : styles.feedbackBannerError,
+            ]}
+          >
+            <Text
+              style={[
+                styles.feedbackBannerText,
+                submissionFeedback.type === 'success'
+                  ? styles.feedbackTextSuccess
+                  : styles.feedbackTextError,
+              ]}
+            >
+              {submissionFeedback.text}
+            </Text>
+          </View>
+        )}
 
         {/* SUBMIT BUTTON */}
         <TouchableOpacity
@@ -1181,6 +1237,31 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   chipSubtextSelected: {
+    color: '#F87171',
+  },
+  feedbackBanner: {
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  feedbackBannerSuccess: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: '#10B981',
+  },
+  feedbackBannerError: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: '#EF4444',
+  },
+  feedbackBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  feedbackTextSuccess: {
+    color: '#34D399',
+  },
+  feedbackTextError: {
     color: '#F87171',
   },
   submitButton: {
