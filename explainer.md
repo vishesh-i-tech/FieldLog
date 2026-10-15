@@ -106,3 +106,14 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Summary**:
   Zero friction onboarding: register and assign officers directly inside workplace workflows.
 
+---
+
+## 11. Web Live Camera Viewfinder (`getUserMedia` & Canvas Stream Shutter)
+- **Role & Purpose**:
+  Eliminates desktop/laptop browser file picker popups when users select "Take Camera Photo", launching a real-time on-screen camera viewfinder instead of navigating to system folders.
+- **Under the Hood**:
+  On Web, invokes `navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })`, streaming hardware camera video directly into an HTML5 `<video>` element within a modal viewfinder overlay. Features dynamic camera toggling (environment vs user facing), visual rule-of-thirds reticle markings, and real-time GPS readiness indicators. Tapping the circular shutter extracts the active video frame onto an HTML5 `<canvas>`, invokes `stampGeoDataOnImage()` to burn verifiable GPS and timestamp coordinates into the image binary, and automatically terminates active stream tracks upon capture.
+- **Summary**:
+  True on-screen live camera stream with one-tap shutter capture, bypassing OS folder dialogs completely.
+
+

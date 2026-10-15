@@ -20,6 +20,7 @@ import {
   compressPhoto,
   generateDevMockPhoto,
   pickRealDevicePhoto,
+  stampGeoDataOnImage,
   CapturedPhoto,
 } from '../src/services/photo.service';
 import {
@@ -95,6 +96,14 @@ export default function RecordSubmissionScreen() {
   const [cameraVisible, setCameraVisible] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+
+  // Web Camera Viewfinder State
+  const [webCameraModalVisible, setWebCameraModalVisible] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoElementRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Submission state
   const [submitting, setSubmitting] = useState(false);
@@ -257,20 +266,138 @@ export default function RecordSubmissionScreen() {
     setCameraVisible(true);
   };
 
-  // Handler: Take photo with live camera on web
-  const handlePickFromCamera = async () => {
-    setPhotoPickerModalVisible(false);
+  // Web Camera Stream Lifecycle
+  const stopWebCameraStream = () => {
+    if (mediaStreamRef.current) {
+      try {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch {}
+      mediaStreamRef.current = null;
+    }
+  };
+
+  const startWebCamera = async (facing: 'environment' | 'user' = cameraFacing) => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(lang === 'hi' ? 'इस ब्राउज़र में कैमरा उपलब्ध नहीं है।' : 'Camera is not supported in this browser.');
+      return;
+    }
+
+    setCameraLoading(true);
+    setCameraError(null);
+    stopWebCameraStream();
+
     try {
-      const photo = await pickRealDevicePhoto('camera');
-      if (photo) {
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        // Fallback to any available video device
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      mediaStreamRef.current = stream;
+
+      if (videoElementRef.current) {
+        videoElementRef.current.srcObject = stream;
+        videoElementRef.current.play().catch(console.error);
+      }
+      setCameraLoading(false);
+    } catch (err: any) {
+      console.error('Camera access error:', err);
+      setCameraLoading(false);
+      setCameraError(
+        lang === 'hi'
+          ? 'कैमरा खोलने की अनुमति नहीं मिली या कैमरा नहीं मिला।'
+          : 'Could not access device camera. Please check camera permissions in your browser.'
+      );
+    }
+  };
+
+  const toggleCameraFacing = async () => {
+    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
+    setCameraFacing(nextFacing);
+    await startWebCamera(nextFacing);
+  };
+
+  useEffect(() => {
+    if (webCameraModalVisible && Platform.OS === 'web') {
+      startWebCamera();
+    } else {
+      stopWebCameraStream();
+    }
+    return () => {
+      stopWebCameraStream();
+    };
+  }, [webCameraModalVisible]);
+
+  // Handler: Capture photo frame from live web camera
+  const handleSnapWebPhoto = async () => {
+    if (!videoElementRef.current) return;
+    try {
+      const video = videoElementRef.current;
+      const gps = await getCurrentGpsLocation();
+      const warning = gps.locationOff ? 'Device GPS Off' : '';
+
+      const stampedDataUrl = stampGeoDataOnImage(
+        video,
+        gps.latitude,
+        gps.longitude,
+        gps.accuracyM,
+        warning
+      );
+
+      stopWebCameraStream();
+      setWebCameraModalVisible(false);
+
+      if (stampedDataUrl) {
+        const photo: CapturedPhoto = {
+          uri: stampedDataUrl,
+          width: video.videoWidth || 1280,
+          height: video.videoHeight || 720,
+          sizeBytes: Math.round(stampedDataUrl.length * 0.75),
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          accuracyM: gps.accuracyM,
+          capturedAt: new Date().toISOString(),
+          locationSource: gps.locationOff ? 'site_default' : 'device_gps',
+          locationWarning: warning,
+        };
         setPhotos((prev) => [...prev, photo]);
-        if (photo.locationWarning) {
+        if (warning) {
           setLocationToast(lang === 'hi' ? '⚠️ डिवाइस का जीपीएस बंद है।' : '⚠️ Device GPS is turned off.');
           setTimeout(() => setLocationToast(null), 4000);
         }
       }
     } catch (err) {
-      console.error('Failed to capture camera photo:', err);
+      console.error('Failed to capture web photo frame:', err);
+    }
+  };
+
+  // Handler: Take photo with live camera
+  const handlePickFromCamera = async () => {
+    setPhotoPickerModalVisible(false);
+    if (Platform.OS === 'web') {
+      setWebCameraModalVisible(true);
+    } else {
+      const result = await requestPermission();
+      if (!result.granted) {
+        Alert.alert(
+          lang === 'hi' ? 'कैमरा अनुमति आवश्यक है' : 'Camera Permission Required',
+          lang === 'hi' ? 'फोटो खींचने के लिए कैमरा अनुमति दें।' : 'Please grant camera access to capture site photos.'
+        );
+        return;
+      }
+      setCameraVisible(true);
     }
   };
 
@@ -963,6 +1090,149 @@ export default function RecordSubmissionScreen() {
                 <Text style={styles.pickerOptionSub}>{lang === 'hi' ? 'परीक्षण के लिए' : 'Instant snapshot'}</Text>
               </View>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* LIVE WEB CAMERA VIEWFINDER MODAL */}
+      <Modal
+        visible={webCameraModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          stopWebCameraStream();
+          setWebCameraModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => {
+              stopWebCameraStream();
+              setWebCameraModalVisible(false);
+            }}
+          />
+          <View style={styles.webCameraSheet}>
+            {/* Camera Header */}
+            <View style={styles.webCameraHeader}>
+              <View style={styles.webCameraHeaderLeft}>
+                <Text style={styles.webCameraTitle}>📷 {lang === 'hi' ? 'लाइव कैमरा' : 'Live Camera'}</Text>
+                <View style={styles.cameraGpsPill}>
+                  <Text style={styles.cameraGpsDot}>●</Text>
+                  <Text style={styles.cameraGpsText}>GPS Active</Text>
+                </View>
+              </View>
+              <View style={styles.webCameraHeaderRight}>
+                <TouchableOpacity
+                  style={styles.cameraFlipBtn}
+                  onPress={toggleCameraFacing}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cameraFlipIcon}>🔄</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cameraCloseBtn}
+                  onPress={() => {
+                    stopWebCameraStream();
+                    setWebCameraModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.trayCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Viewfinder Window */}
+            <View style={styles.webCameraViewport}>
+              {cameraLoading && (
+                <View style={styles.cameraLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#3B82F6" />
+                  <Text style={styles.cameraLoadingText}>
+                    {lang === 'hi' ? 'कैमरा शुरू हो रहा है...' : 'Starting camera...'}
+                  </Text>
+                </View>
+              )}
+
+              {cameraError ? (
+                <View style={styles.cameraErrorOverlay}>
+                  <Text style={styles.cameraErrorIcon}>⚠️</Text>
+                  <Text style={styles.cameraErrorText}>{cameraError}</Text>
+                  <TouchableOpacity
+                    style={styles.cameraRetryBtn}
+                    onPress={() => startWebCamera()}
+                  >
+                    <Text style={styles.cameraRetryBtnText}>
+                      {lang === 'hi' ? 'पुनः प्रयास करें' : 'Retry Camera'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cameraRetryBtn, { backgroundColor: '#334155', marginTop: 8 }]}
+                    onPress={() => {
+                      stopWebCameraStream();
+                      setWebCameraModalVisible(false);
+                      handlePickFromGallery();
+                    }}
+                  >
+                    <Text style={styles.cameraRetryBtnText}>
+                      📁 {lang === 'hi' ? 'डिवाइस से फोटो चुनें' : 'Choose File Instead'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                Platform.OS === 'web' &&
+                React.createElement('video', {
+                  ref: (el: any) => {
+                    videoElementRef.current = el;
+                    if (el && mediaStreamRef.current && el.srcObject !== mediaStreamRef.current) {
+                      el.srcObject = mediaStreamRef.current;
+                      el.play().catch(() => {});
+                    }
+                  },
+                  autoPlay: true,
+                  playsInline: true,
+                  muted: true,
+                  style: {
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    transform: cameraFacing === 'user' ? 'scaleX(-1)' : 'none',
+                    borderRadius: 12,
+                  },
+                })
+              )}
+
+              {/* Viewfinder Target Crosshairs Overlay */}
+              {!cameraError && !cameraLoading && (
+                <View style={styles.viewfinderGrid} pointerEvents="none">
+                  <View style={styles.viewfinderCornerTL} />
+                  <View style={styles.viewfinderCornerTR} />
+                  <View style={styles.viewfinderCornerBL} />
+                  <View style={styles.viewfinderCornerBR} />
+                  <View style={styles.viewfinderCrosshair} />
+                  <View style={styles.viewfinderLiveBadge}>
+                    <Text style={styles.viewfinderLiveText}>REC ● LIVE</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Bottom Controls / Shutter Bar */}
+            <View style={styles.webCameraBottomBar}>
+              <TouchableOpacity
+                style={styles.webShutterBtn}
+                onPress={handleSnapWebPhoto}
+                disabled={cameraLoading || !!cameraError}
+                activeOpacity={0.7}
+              >
+                <View style={styles.webShutterInner}>
+                  <Text style={styles.webShutterIcon}>📷</Text>
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.webShutterHint}>
+                {lang === 'hi' ? 'फोटो खींचने के लिए दबाएं' : 'Tap to capture geotagged photo'}
+              </Text>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1871,5 +2141,230 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
+  },
+  // Web Camera Viewfinder Styles
+  webCameraSheet: {
+    backgroundColor: '#0F172A',
+    width: '92%',
+    maxWidth: 480,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E3A8A',
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  webCameraHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  webCameraHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  webCameraTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  cameraGpsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    gap: 4,
+  },
+  cameraGpsDot: {
+    color: '#10B981',
+    fontSize: 9,
+  },
+  cameraGpsText: {
+    color: '#34D399',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  webCameraHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cameraFlipBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cameraFlipIcon: {
+    fontSize: 14,
+  },
+  cameraCloseBtn: {
+    padding: 4,
+  },
+  webCameraViewport: {
+    width: '100%',
+    height: 320,
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  cameraLoadingText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  cameraErrorOverlay: {
+    padding: 20,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  cameraErrorIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  cameraErrorText: {
+    color: '#F87171',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  cameraRetryBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cameraRetryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  viewfinderGrid: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewfinderCornerTL: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
+    width: 24,
+    height: 24,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: '#38BDF8',
+  },
+  viewfinderCornerTR: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#38BDF8',
+  },
+  viewfinderCornerBL: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    width: 24,
+    height: 24,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderColor: '#38BDF8',
+  },
+  viewfinderCornerBR: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#38BDF8',
+  },
+  viewfinderCrosshair: {
+    width: 16,
+    height: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+    borderRadius: 8,
+  },
+  viewfinderLiveBadge: {
+    position: 'absolute',
+    top: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  viewfinderLiveText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  webCameraBottomBar: {
+    alignItems: 'center',
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  webShutterBtn: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: 'transparent',
+    borderWidth: 4,
+    borderColor: '#38BDF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  webShutterInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webShutterIcon: {
+    fontSize: 20,
+  },
+  webShutterHint: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

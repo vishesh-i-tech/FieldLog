@@ -204,7 +204,7 @@ export async function getCurrentGpsLocation(): Promise<{
  * Draws the real image on canvas, adds GPS stamp and returns JPEG data URL.
  */
 export function stampGeoDataOnImage(
-  imgElement: HTMLImageElement,
+  imgElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | any,
   lat?: number,
   lng?: number,
   accuracy?: number,
@@ -215,8 +215,8 @@ export function stampGeoDataOnImage(
   const canvas = document.createElement('canvas');
   // Scale down to max 1280 width to keep performance fast and snappy
   const maxDim = 1280;
-  let w = imgElement.naturalWidth || imgElement.width || 800;
-  let h = imgElement.naturalHeight || imgElement.height || 600;
+  let w = (imgElement as any).naturalWidth || (imgElement as any).videoWidth || (imgElement as any).width || 800;
+  let h = (imgElement as any).naturalHeight || (imgElement as any).videoHeight || (imgElement as any).height || 600;
 
   if (w > maxDim || h > maxDim) {
     if (w > h) {
