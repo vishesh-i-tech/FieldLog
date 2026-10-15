@@ -85,3 +85,24 @@ This document outlines the technologies, libraries, architectural decisions, and
   Accepts raw multipart binary or JSON `{ dataUrl }` base64 payloads at `PUT /api/v1/dev-storage/upload`, writes files into `./uploads/`, and serves them with accurate MIME types at `GET /api/v1/dev-storage/files/:key`.
 - **Summary**:
   Self-contained media storage requiring zero external cloud dependencies during local testing.
+
+---
+
+## 9. Role-Based Navigation Security & Password Gating
+- **Role & Purpose**:
+  Prevents unauthorized field personnel from accessing executive management dashboards, financial aggregates, and workplace assignments.
+- **Under the Hood**:
+  The top role switcher displays the active role (`Owner` vs logged-in officer display name). Attempting to transition from the Field Officer interface (`/record`) to the Owner portal triggers a secure authentication modal requiring the owner's master account credentials. Authentication is validated against the backend `/api/v1/auth/owner/login` endpoint before granting route transition.
+- **Summary**:
+  Owner dashboard is locked behind verified admin password authentication when accessed from field devices.
+
+---
+
+## 10. Inline Officer Creation & Dynamic Workplace Assignment
+- **Role & Purpose**:
+  Streamlines operational workflow by removing separate disconnected officer forms and enabling 1-step inline officer creation directly during workplace setup or reassignment.
+- **Under the Hood**:
+  The "+ Add Field Officer" primary button is consolidated into "+ Add Work Place" and existing site "Assign Officer" modals. Owners can expand an inline `+ Add New Officer` sub-form to register a supervisor with name, mobile phone number, and 4-digit PIN. Upon creation, the officer is immediately selected and linked to the active workplace in a single atomic flow. Work place creation follows a standardized 3-step hierarchy: 1. Site Name, 2. Category Chips (Construction, Warehouse, Retail, etc.), and 3. Location.
+- **Summary**:
+  Zero friction onboarding: register and assign officers directly inside workplace workflows.
+

@@ -37,6 +37,7 @@ import {
   initAuthSession,
   getAuthTokens,
   loginSupervisor,
+  loginOwner,
 } from '../src/services/auth.state';
 
 interface IssueChip {
@@ -99,6 +100,35 @@ export default function RecordSubmissionScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitStatusText, setSubmitStatusText] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Admin Password Protection Modal
+  const [adminAuthModalVisible, setAdminAuthModalVisible] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminAuthError, setAdminAuthError] = useState('');
+  const [verifyingAdmin, setVerifyingAdmin] = useState(false);
+
+  const handleVerifyAdminSwitch = async () => {
+    if (!adminPasswordInput.trim()) {
+      setAdminAuthError(lang === 'hi' ? 'पासवर्ड दर्ज करें' : 'Please enter admin password');
+      return;
+    }
+    setVerifyingAdmin(true);
+    setAdminAuthError('');
+    try {
+      await loginOwner('owner@fieldlog.dev', adminPasswordInput.trim());
+      setAdminAuthModalVisible(false);
+      setAdminPasswordInput('');
+      router.push('/owner');
+    } catch {
+      setAdminAuthError(
+        lang === 'hi'
+          ? 'गलत एडमिन पासवर्ड। केवल अधिकृत एडमिन ही स्विच कर सकते हैं।'
+          : 'Incorrect admin password. Access denied.'
+      );
+    } finally {
+      setVerifyingAdmin(false);
+    }
+  };
 
   const todayDateStr = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
     weekday: 'short',
@@ -549,17 +579,21 @@ export default function RecordSubmissionScreen() {
             <View style={styles.roleToggle}>
               <TouchableOpacity
                 style={styles.roleBtn}
-                onPress={() => router.push('/owner')}
+                onPress={() => {
+                  setAdminPasswordInput('');
+                  setAdminAuthError('');
+                  setAdminAuthModalVisible(true);
+                }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.roleBtnText}>{t('admin')}</Text>
+                <Text style={styles.roleBtnText}>🔒 {t('admin')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.roleBtn, styles.roleBtnActive]}
                 activeOpacity={1}
               >
-                <Text style={[styles.roleBtnText, styles.roleBtnTextActive]}>
-                  {t('fieldOfficer')}
+                <Text style={[styles.roleBtnText, styles.roleBtnTextActive]} numberOfLines={1}>
+                  👷 {supervisorName || t('fieldOfficer')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1030,6 +1064,67 @@ export default function RecordSubmissionScreen() {
               onPress={handleAddCustomIssue}
             >
               <Text style={styles.trayAddBtnText}>+ {t('save')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ADMIN PASSWORD PROTECTION MODAL */}
+      <Modal
+        visible={adminAuthModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAdminAuthModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setAdminAuthModalVisible(false)}
+          />
+          <View style={styles.traySheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>🔒 {lang === 'hi' ? 'एडमिन सुरक्षा' : 'Admin Access'}</Text>
+              <TouchableOpacity onPress={() => setAdminAuthModalVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.traySubtitle}>
+              {lang === 'hi'
+                ? 'एडमिन पोर्टल पर जाने के लिए एडमिन पासवर्ड दर्ज करें:'
+                : 'Enter the Admin account password to switch to the Owner portal:'}
+            </Text>
+
+            <TextInput
+              style={styles.trayInput}
+              placeholder={lang === 'hi' ? 'एडमिन पासवर्ड' : 'Admin Password'}
+              placeholderTextColor="#71717A"
+              secureTextEntry
+              value={adminPasswordInput}
+              onChangeText={(txt) => {
+                setAdminPasswordInput(txt);
+                setAdminAuthError('');
+              }}
+              autoFocus
+            />
+
+            {adminAuthError ? (
+              <Text style={styles.adminAuthErrorText}>⚠️ {adminAuthError}</Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.trayAddBtn}
+              onPress={handleVerifyAdminSwitch}
+              disabled={verifyingAdmin}
+            >
+              {verifyingAdmin ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.trayAddBtnText}>
+                  {lang === 'hi' ? 'सत्यापित करें और जाएं' : 'Verify & Switch to Admin'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -1672,6 +1767,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     marginBottom: 12,
+  },
+  adminAuthErrorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 10,
   },
   trayAddBtn: {
     backgroundColor: '#2563EB',

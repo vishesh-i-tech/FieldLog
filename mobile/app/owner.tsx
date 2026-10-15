@@ -133,6 +133,67 @@ export default function OwnerDashboard() {
   const [initialSupervisorIdsForTargetSite, setInitialSupervisorIdsForTargetSite] = useState<string[]>([]);
   const [selectedSupervisorIdsForTargetSite, setSelectedSupervisorIdsForTargetSite] = useState<string[]>([]);
   const [savingSiteAssignment, setSavingSiteAssignment] = useState(false);
+  const [activeSupervisorName, setActiveSupervisorName] = useState('');
+
+  // Site Category & Inline New Officer creation
+  const [newSiteCategory, setNewSiteCategory] = useState('Construction');
+  const [inlineNewOfficerVisible, setInlineNewOfficerVisible] = useState(false);
+  const [inlineOfficerName, setInlineOfficerName] = useState('');
+  const [inlineOfficerPhone, setInlineOfficerPhone] = useState('');
+  const [inlineOfficerPin, setInlineOfficerPin] = useState('1234');
+  const [savingInlineOfficer, setSavingInlineOfficer] = useState(false);
+
+  const handleCreateInlineOfficer = async (targetFor: 'newSite' | 'existingSite') => {
+    if (!inlineOfficerName.trim() || !inlineOfficerPhone.trim()) {
+      Alert.alert(
+        lang === 'hi' ? 'नाम और फ़ोन आवश्यक' : 'Required',
+        lang === 'hi'
+          ? 'कृपया अधिकारी का नाम और फ़ोन नंबर दर्ज करें'
+          : 'Please enter officer name and mobile phone number'
+      );
+      return;
+    }
+    setSavingInlineOfficer(true);
+    try {
+      const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/supervisors`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: inlineOfficerName.trim(),
+          phone: inlineOfficerPhone.trim(),
+          pin: inlineOfficerPin || '1234',
+          language: 'hi',
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create officer');
+      }
+
+      const created = await res.json();
+      const newSup = created.supervisor;
+      setSupervisorsList((prev) => [...prev, newSup]);
+
+      if (targetFor === 'newSite') {
+        setSelectedSupervisorIdsForSite((prev) => [...prev, newSup.id]);
+      } else {
+        setSelectedSupervisorIdsForTargetSite((prev) => [...prev, newSup.id]);
+      }
+
+      setInlineOfficerName('');
+      setInlineOfficerPhone('');
+      setInlineOfficerPin('1234');
+      setInlineNewOfficerVisible(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSavingInlineOfficer(false);
+    }
+  };
 
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
@@ -200,7 +261,11 @@ export default function OwnerDashboard() {
       });
       if (supervisorsRes.ok) {
         const supData = await supervisorsRes.json();
-        setSupervisorsList(supData.supervisors || []);
+        const list = supData.supervisors || [];
+        setSupervisorsList(list);
+        if (list.length > 0) {
+          setActiveSupervisorName((prev) => prev || list[0].name);
+        }
       }
     } catch (err) {
       console.error('Error fetching owner data:', err);
@@ -339,7 +404,9 @@ export default function OwnerDashboard() {
         },
         body: JSON.stringify({
           name: newSiteName.trim(),
-          locationText: newSiteLocation.trim() || 'Site Area',
+          locationText: newSiteCategory
+            ? `[${newSiteCategory}] ${newSiteLocation.trim() || 'Site Area'}`
+            : (newSiteLocation.trim() || 'Site Area'),
         }),
       });
 
@@ -365,8 +432,10 @@ export default function OwnerDashboard() {
 
       setAddSiteModalVisible(false);
       setNewSiteName('');
+      setNewSiteCategory('Construction');
       setNewSiteLocation('');
       setSelectedSupervisorIdsForSite([]);
+      setInlineNewOfficerVisible(false);
       loadDashboardData();
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -488,8 +557,8 @@ export default function OwnerDashboard() {
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.roleBtnText}>
-                {t('fieldOfficer')}
+              <Text style={styles.roleBtnText} numberOfLines={1}>
+                👷 {activeSupervisorName || t('fieldOfficer')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -528,9 +597,9 @@ export default function OwnerDashboard() {
                 setRefreshing(true);
                 loadDashboardData();
               }}
+              activeOpacity={0.7}
             >
               <Text style={styles.refreshIcon}>{refreshing ? '⏳' : '🔄'}</Text>
-              <Text style={styles.refreshText}>{t('refresh')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -561,22 +630,14 @@ export default function OwnerDashboard() {
             </View>
           </View>
 
-          {/* Management Action Buttons (Add Work Place & Add Field Officer) */}
+          {/* Management Action Bar (Single primary Add Work Place button) */}
           <View style={styles.managementBar}>
             <TouchableOpacity
-              style={styles.manageBtn}
+              style={[styles.manageBtn, { flex: 1 }]}
               onPress={() => setAddSiteModalVisible(true)}
               activeOpacity={0.8}
             >
               <Text style={styles.manageBtnText}>+ {t('addWorkPlace')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.manageBtn, styles.manageBtnSecondary]}
-              onPress={() => setAddOfficerModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.manageBtnText}>+ {t('addFieldOfficer')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -754,43 +815,124 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
+            {/* 1. Site Name */}
             <Text style={styles.inputLabel}>{t('workPlaceName')}</Text>
             <TextInput
               style={styles.trayInput}
-              placeholder="e.g. South Depot & Warehouse"
+              placeholder={lang === 'hi' ? 'कार्यस्थल का नाम' : 'Site Name'}
               placeholderTextColor="#71717A"
               value={newSiteName}
               onChangeText={setNewSiteName}
             />
 
+            {/* 2. Site Category */}
+            <Text style={styles.inputLabel}>{t('siteCategory')}</Text>
+            <View style={styles.categoryChipsRow}>
+              {['Construction', 'Warehouse', 'Retail', 'Manufacturing', 'Office', 'Other'].map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.categoryChip, newSiteCategory === cat && styles.categoryChipActive]}
+                  onPress={() => setNewSiteCategory(cat)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.categoryChipText, newSiteCategory === cat && styles.categoryChipTextActive]}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* 3. Location */}
             <Text style={styles.inputLabel}>{t('location')}</Text>
             <TextInput
               style={styles.trayInput}
-              placeholder="e.g. Sector 62, Noida"
+              placeholder={lang === 'hi' ? 'स्थान / पता' : 'Site Location / Address'}
               placeholderTextColor="#71717A"
               value={newSiteLocation}
               onChangeText={setNewSiteLocation}
             />
 
-            <Text style={styles.inputLabel}>{t('assignFieldOfficer')} (Multiple)</Text>
-            <ScrollView style={{ maxHeight: 120, marginBottom: 12 }}>
-              {supervisorsList.map((sup) => {
-                const isSelected = selectedSupervisorIdsForSite.includes(sup.id);
-                return (
-                  <TouchableOpacity
-                    key={sup.id}
-                    style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
-                    onPress={() => {
-                      setSelectedSupervisorIdsForSite((prev) =>
-                        isSelected ? prev.filter((id) => id !== sup.id) : [...prev, sup.id]
-                      );
-                    }}
-                  >
-                    <Text style={styles.officerSelectName}>👷 {sup.name} ({sup.phone})</Text>
-                    <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* 4. Assign Officer with + Add New Officer button */}
+            <View style={styles.assignOfficerHeaderRow}>
+              <Text style={styles.inputLabel}>{t('assignFieldOfficer')}</Text>
+              <TouchableOpacity
+                style={styles.addInlineOfficerToggle}
+                onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.addInlineOfficerToggleText}>
+                  {inlineNewOfficerVisible ? t('cancel') : t('addNewOfficer')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {inlineNewOfficerVisible && (
+              <View style={styles.inlineOfficerBox}>
+                <Text style={styles.inlineOfficerBoxTitle}>+ {t('addFieldOfficer')}</Text>
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? 'अधिकारी का नाम' : 'Officer Name'}
+                  placeholderTextColor="#71717A"
+                  value={inlineOfficerName}
+                  onChangeText={setInlineOfficerName}
+                />
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? 'फ़ोन नंबर (मोबाइल)' : 'Mobile Phone Number'}
+                  placeholderTextColor="#71717A"
+                  keyboardType="phone-pad"
+                  value={inlineOfficerPhone}
+                  onChangeText={setInlineOfficerPhone}
+                />
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? '4-अंकों का पिन (डिफ़ॉल्ट 1234)' : '4-Digit PIN (Default 1234)'}
+                  placeholderTextColor="#71717A"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  value={inlineOfficerPin}
+                  onChangeText={setInlineOfficerPin}
+                />
+                <TouchableOpacity
+                  style={styles.inlineOfficerSaveBtn}
+                  onPress={() => handleCreateInlineOfficer('newSite')}
+                  disabled={savingInlineOfficer}
+                >
+                  {savingInlineOfficer ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.inlineOfficerSaveBtnText}>
+                      ✓ {lang === 'hi' ? 'अधिकारी जोड़ें और चुनें' : 'Add & Select Officer'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <ScrollView style={{ maxHeight: 110, marginBottom: 12 }}>
+              {supervisorsList.length === 0 ? (
+                <Text style={styles.noDataText}>
+                  {lang === 'hi' ? 'कोई अधिकारी नहीं है। ऊपर "+ नया अधिकारी जोड़ें" दबाएं।' : 'No officers found. Tap "+ Add New Officer" above.'}
+                </Text>
+              ) : (
+                supervisorsList.map((sup) => {
+                  const isSelected = selectedSupervisorIdsForSite.includes(sup.id);
+                  return (
+                    <TouchableOpacity
+                      key={sup.id}
+                      style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
+                      onPress={() => {
+                        setSelectedSupervisorIdsForSite((prev) =>
+                          isSelected ? prev.filter((id) => id !== sup.id) : [...prev, sup.id]
+                        );
+                      }}
+                    >
+                      <Text style={styles.officerSelectName}>👷 {sup.name} ({sup.phone})</Text>
+                      <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </ScrollView>
 
             <TouchableOpacity
@@ -808,94 +950,7 @@ export default function OwnerDashboard() {
         </View>
       </Modal>
 
-      {/* MODAL 2: ADD FIELD OFFICER */}
-      <Modal
-        visible={addOfficerModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAddOfficerModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            activeOpacity={1}
-            onPress={() => setAddOfficerModalVisible(false)}
-          />
-          <View style={styles.manageSheet}>
-            <View style={styles.trayHeader}>
-              <Text style={styles.trayTitle}>{t('addFieldOfficer')}</Text>
-              <TouchableOpacity onPress={() => setAddOfficerModalVisible(false)}>
-                <Text style={styles.trayCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.inputLabel}>{t('officerName')}</Text>
-            <TextInput
-              style={styles.trayInput}
-              placeholder="e.g. Ramesh Kumar"
-              placeholderTextColor="#71717A"
-              value={newOfficerName}
-              onChangeText={setNewOfficerName}
-            />
-
-            <Text style={styles.inputLabel}>{t('phoneLabel')} (Mobile)</Text>
-            <TextInput
-              style={styles.trayInput}
-              placeholder="e.g. 9811111111"
-              placeholderTextColor="#71717A"
-              keyboardType="phone-pad"
-              value={newOfficerPhone}
-              onChangeText={setNewOfficerPhone}
-            />
-
-            <Text style={styles.inputLabel}>{t('pinLabel')} (4 Digits)</Text>
-            <TextInput
-              style={styles.trayInput}
-              placeholder="1234"
-              placeholderTextColor="#71717A"
-              keyboardType="numeric"
-              maxLength={4}
-              value={newOfficerPin}
-              onChangeText={setNewOfficerPin}
-            />
-
-            <Text style={styles.inputLabel}>{t('siteName')} (Access)</Text>
-            <ScrollView style={{ maxHeight: 120, marginBottom: 12 }}>
-              {sitesData.map((s) => {
-                const isSelected = selectedSiteIdsForOfficer.includes(s.siteId);
-                return (
-                  <TouchableOpacity
-                    key={s.siteId}
-                    style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
-                    onPress={() => {
-                      setSelectedSiteIdsForOfficer((prev) =>
-                        isSelected ? prev.filter((id) => id !== s.siteId) : [...prev, s.siteId]
-                      );
-                    }}
-                  >
-                    <Text style={styles.officerSelectName}>📍 {s.siteName}</Text>
-                    <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.saveActionBtn}
-              onPress={handleSaveOfficer}
-              disabled={savingOfficer}
-            >
-              {savingOfficer ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.saveActionText}>{t('save')}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL 3: ASSIGN FIELD OFFICER TO WORKPLACE */}
+      {/* MODAL 2: ASSIGN FIELD OFFICER TO WORKPLACE */}
       <Modal
         visible={assignSiteModalVisible}
         transparent
@@ -919,11 +974,67 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>{lang === 'hi' ? 'फील्ड ऑफिसर चुनें:' : 'Select Field Officer(s):'}</Text>
-            <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
+            {/* Header row with + Add New Officer toggle */}
+            <View style={styles.assignOfficerHeaderRow}>
+              <Text style={styles.inputLabel}>{lang === 'hi' ? 'फील्ड ऑफिसर चुनें:' : 'Select Field Officer(s):'}</Text>
+              <TouchableOpacity
+                style={styles.addInlineOfficerToggle}
+                onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.addInlineOfficerToggleText}>
+                  {inlineNewOfficerVisible ? t('cancel') : t('addNewOfficer')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {inlineNewOfficerVisible && (
+              <View style={styles.inlineOfficerBox}>
+                <Text style={styles.inlineOfficerBoxTitle}>+ {t('addFieldOfficer')}</Text>
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? 'अधिकारी का नाम' : 'Officer Name'}
+                  placeholderTextColor="#71717A"
+                  value={inlineOfficerName}
+                  onChangeText={setInlineOfficerName}
+                />
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? 'फ़ोन नंबर (मोबाइल)' : 'Mobile Phone Number'}
+                  placeholderTextColor="#71717A"
+                  keyboardType="phone-pad"
+                  value={inlineOfficerPhone}
+                  onChangeText={setInlineOfficerPhone}
+                />
+                <TextInput
+                  style={styles.trayInputSmall}
+                  placeholder={lang === 'hi' ? '4-अंकों का पिन (डिफ़ॉल्ट 1234)' : '4-Digit PIN (Default 1234)'}
+                  placeholderTextColor="#71717A"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  value={inlineOfficerPin}
+                  onChangeText={setInlineOfficerPin}
+                />
+                <TouchableOpacity
+                  style={styles.inlineOfficerSaveBtn}
+                  onPress={() => handleCreateInlineOfficer('existingSite')}
+                  disabled={savingInlineOfficer}
+                >
+                  {savingInlineOfficer ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.inlineOfficerSaveBtnText}>
+                      ✓ {lang === 'hi' ? 'अधिकारी जोड़ें और चुनें' : 'Add & Select Officer'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <ScrollView style={{ maxHeight: 180, marginBottom: 12 }}>
               {supervisorsList.length === 0 ? (
                 <Text style={styles.noDataText}>
-                  {lang === 'hi' ? 'कोई फील्ड ऑफिसर नहीं है। पहले ऑफिसर जोड़ें।' : 'No officers found. Add a field officer first.'}
+                  {lang === 'hi' ? 'कोई फ़ील्ड ऑफिसर नहीं है। ऊपर "+ नया अधिकारी जोड़ें" दबाएं।' : 'No officers found. Tap "+ Add New Officer" above.'}
                 </Text>
               ) : (
                 supervisorsList.map((sup) => {
@@ -1921,6 +2032,89 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   inspectCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  categoryChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  categoryChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#1C1C1E',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  categoryChipActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#3B82F6',
+  },
+  categoryChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  categoryChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  assignOfficerHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  addInlineOfficerToggle: {
+    backgroundColor: '#1E293B',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  addInlineOfficerToggleText: {
+    color: '#60A5FA',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  inlineOfficerBox: {
+    backgroundColor: '#0F172A',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E3A8A',
+    marginBottom: 12,
+  },
+  inlineOfficerBoxTitle: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  trayInputSmall: {
+    backgroundColor: '#1E293B',
+    color: '#FFFFFF',
+    fontSize: 13,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inlineOfficerSaveBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  inlineOfficerSaveBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',

@@ -36,7 +36,7 @@ export default function RootLayout() {
       <Stack.Screen
         name="owner"
         options={{
-          title: "Owner Dashboard",
+          title: "Owner",
           headerShadowVisible: false,
         }}
       />
