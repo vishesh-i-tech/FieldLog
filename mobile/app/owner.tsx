@@ -104,6 +104,10 @@ export default function OwnerDashboard() {
   const [sitesData, setSitesData] = useState<SiteTodayItem[]>([]);
   const [supervisorsList, setSupervisorsList] = useState<SupervisorItem[]>([]);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [selectedSiteRecords, setSelectedSiteRecords] = useState<any[]>([]);
+  const [selectedRecordIndex, setSelectedRecordIndex] = useState<number>(0);
+  const [siteHistoryTab, setSiteHistoryTab] = useState<'dates' | 'allPhotos'>('dates');
   const [detailLoading, setDetailLoading] = useState(false);
   const [recordDetail, setRecordDetail] = useState<RecordDetail | null>(null);
   const [selectedSiteName, setSelectedSiteName] = useState('');
@@ -322,11 +326,12 @@ export default function OwnerDashboard() {
     loadDashboardData();
   }, []);
 
-  // Fetch full detail for a record
-  const openRecordDetail = async (recordId: string, siteName: string) => {
-    setSelectedRecordId(recordId);
+  // Fetch all historical daily records for a site (Date-Wise)
+  const openSiteDetail = async (siteId: string, siteName: string, initialRecordId?: string) => {
+    setSelectedSiteId(siteId);
     setSelectedSiteName(siteName);
     setDetailLoading(true);
+    setSiteHistoryTab('dates');
     setIsPlayingAudio(false);
     if (activeAudioObj) {
       try {
@@ -336,17 +341,65 @@ export default function OwnerDashboard() {
     }
 
     try {
-      const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/${recordId}`, {
+      const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites/${siteId}/records`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
-        const detail = await res.json();
-        setRecordDetail(detail);
+        const data = await res.json();
+        const records = data.records || [];
+        setSelectedSiteRecords(records);
+        if (initialRecordId) {
+          const idx = records.findIndex((r: any) => r.id === initialRecordId);
+          setSelectedRecordIndex(idx >= 0 ? idx : 0);
+        } else {
+          setSelectedRecordIndex(0);
+        }
+      } else {
+        // Fallback to single record detail if full history endpoint is not available
+        if (initialRecordId) {
+          const singleRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/${initialRecordId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (singleRes.ok) {
+            const single = await singleRes.json();
+            setSelectedSiteRecords([{ ...single.record, issues: single.issues, media: single.media }]);
+            setSelectedRecordIndex(0);
+          }
+        } else {
+          setSelectedSiteRecords([]);
+        }
       }
     } catch (err) {
-      console.error('Failed to load record detail:', err);
+      console.error('Failed to load site historical records:', err);
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  // Backwards compatibility alias
+  const openRecordDetail = async (recordId: string, siteName: string) => {
+    // Look up siteId from sitesData
+    const found = sitesData.find((s) => s.record?.id === recordId);
+    if (found) {
+      await openSiteDetail(found.siteId, siteName, recordId);
+    } else {
+      setSelectedRecordId(recordId);
+      setSelectedSiteName(siteName);
+      setDetailLoading(true);
+      try {
+        const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/${recordId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const detail = await res.json();
+          setSelectedSiteRecords([{ ...detail.record, issues: detail.issues, media: detail.media }]);
+          setSelectedRecordIndex(0);
+        }
+      } catch (err) {
+        console.error('Failed to load record:', err);
+      } finally {
+        setDetailLoading(false);
+      }
     }
   };
 
@@ -364,7 +417,14 @@ export default function OwnerDashboard() {
     } else {
       setIsPlayingAudio(true);
       if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
-        const audioUrl = `${DEFAULT_API_BASE_URL}/uploads/${audioMedia.storageKey.replace(/^uploads\//, '')}`;
+        let audioUrl = audioMedia.url;
+        if (!audioUrl) {
+          if (audioMedia.storageKey?.startsWith('http://') || audioMedia.storageKey?.startsWith('https://') || audioMedia.storageKey?.startsWith('data:')) {
+            audioUrl = audioMedia.storageKey;
+          } else {
+            audioUrl = `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(audioMedia.storageKey)}`;
+          }
+        }
         const audio = new Audio(audioUrl);
         audio.onended = () => {
           setIsPlayingAudio(false);
@@ -531,8 +591,49 @@ export default function OwnerDashboard() {
     month: 'short',
   });
 
-  const audioItem = recordDetail?.media?.find((m) => m.kind === 'audio');
-  const photosList = recordDetail?.media?.filter((m) => m.kind === 'photo') || [];
+  const currentRecord = selectedSiteRecords[selectedRecordIndex] || null;
+  const audioItem = currentRecord?.media?.find((m: any) => m.kind === 'audio');
+  const photosList = currentRecord?.media?.filter((m: any) => m.kind === 'photo') || [];
+
+  // All historical photos across all dates for this site
+  const allHistoricalPhotos: any[] = [];
+  selectedSiteRecords.forEach((rec: any) => {
+    (rec.media || []).forEach((m: any) => {
+      if (m.kind === 'photo') {
+        allHistoricalPhotos.push({
+          ...m,
+          recordDate: rec.recordDate,
+          submitterName: rec.submitterName,
+        });
+      }
+    });
+  });
+
+  const formatChipDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isToday = dateStr === todayStr;
+      const formatted = d.toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      return isToday ? `${lang === 'hi' ? 'आज' : 'Today'}, ${formatted}` : formatted;
+    }
+    return dateStr;
+  };
+
+  const getStatusDot = (status?: string) => {
+    if (status === 'full') return '🟢';
+    if (status === 'half') return '🟡';
+    return '🔴';
+  };
 
   return (
     <View style={styles.container}>
@@ -676,11 +777,9 @@ export default function OwnerDashboard() {
                     styles.siteCard,
                     item.record ? styles.siteCardActive : styles.siteCardPending,
                   ]}
-                  activeOpacity={item.record ? 0.75 : 1}
+                  activeOpacity={0.75}
                   onPress={() => {
-                    if (item.record) {
-                      openRecordDetail(item.record.id, item.siteName);
-                    }
+                    openSiteDetail(item.siteId, item.siteName, item.record?.id);
                   }}
                 >
                   <View style={styles.siteCardHeader}>
@@ -784,13 +883,11 @@ export default function OwnerDashboard() {
                     </View>
                   )}
 
-                  {item.record ? (
-                    <View style={styles.viewDetailRow}>
-                      <Text style={styles.viewDetailText}>
-                        {t('viewDetails')} →
-                      </Text>
-                    </View>
-                  ) : null}
+                  <View style={styles.viewDetailRow}>
+                    <Text style={styles.viewDetailText}>
+                      {item.record ? `${t('viewDetails')} →` : `📅 ${t('dateHistory')} →`}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })
@@ -1090,12 +1187,13 @@ export default function OwnerDashboard() {
         </View>
       </Modal>
 
-      {/* DETAIL INSPECTION MODAL */}
+      {/* DETAIL INSPECTION MODAL (Date-Wise Historical Records & All Photos Gallery) */}
       <Modal
-        visible={!!selectedRecordId}
+        visible={!!selectedSiteId || !!selectedRecordId}
         animationType="slide"
         transparent={true}
         onRequestClose={() => {
+          setSelectedSiteId(null);
           setSelectedRecordId(null);
           if (activeAudioObj) {
             try { activeAudioObj.pause(); } catch {}
@@ -1108,6 +1206,7 @@ export default function OwnerDashboard() {
             style={StyleSheet.absoluteFillObject}
             activeOpacity={1}
             onPress={() => {
+              setSelectedSiteId(null);
               setSelectedRecordId(null);
               if (activeAudioObj) {
                 try { activeAudioObj.pause(); } catch {}
@@ -1116,17 +1215,18 @@ export default function OwnerDashboard() {
             }}
           />
           <View style={styles.modalContainer}>
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.modalSiteName}>{selectedSiteName}</Text>
                 <Text style={styles.modalDate}>
-                  {t('recordDetailTitle')} • {todayDisplayDate}
-                  {recordDetail?.record?.submitterName ? ` • ${recordDetail.record.submitterName}` : ''}
+                  📍 {selectedSiteRecords.length} {t('totalRecordsCount')} • {allHistoricalPhotos.length} {t('historicalPhotosCount')}
                 </Text>
               </View>
               <TouchableOpacity
                 style={styles.modalCloseButton}
                 onPress={() => {
+                  setSelectedSiteId(null);
                   setSelectedRecordId(null);
                   if (activeAudioObj) {
                     try { activeAudioObj.pause(); } catch {}
@@ -1138,173 +1238,292 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
+            {/* Segmented Tab Controls: Date History vs All Photos */}
+            <View style={styles.historyTabRow}>
+              <TouchableOpacity
+                style={[styles.historyTabBtn, siteHistoryTab === 'dates' && styles.historyTabBtnActive]}
+                onPress={() => setSiteHistoryTab('dates')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.historyTabText, siteHistoryTab === 'dates' && styles.historyTabTextActive]}>
+                  📅 {t('dateHistory')} ({selectedSiteRecords.length})
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.historyTabBtn, siteHistoryTab === 'allPhotos' && styles.historyTabBtnActive]}
+                onPress={() => setSiteHistoryTab('allPhotos')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.historyTabText, siteHistoryTab === 'allPhotos' && styles.historyTabTextActive]}>
+                  🖼️ {t('allPhotos')} ({allHistoricalPhotos.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {detailLoading ? (
               <View style={styles.modalLoading}>
                 <ActivityIndicator size="large" color="#2563EB" />
                 <Text style={styles.loadingText}>{t('loadingSites')}</Text>
               </View>
-            ) : recordDetail ? (
+            ) : siteHistoryTab === 'allPhotos' ? (
+              /* TAB 2: ALL SITE PHOTOS GALLERY */
               <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
-                {/* Status */}
-                <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>{t('statusLabel')}</Text>
-                  <View style={styles.modalStatusRow}>
-                    <View
-                      style={[
-                        styles.bigStatusPill,
-                        {
-                          backgroundColor:
-                            recordDetail.record.status === 'full'
-                              ? 'rgba(16,185,129,0.15)'
-                              : recordDetail.record.status === 'half'
-                              ? 'rgba(245,158,11,0.15)'
-                              : 'rgba(239,68,68,0.15)',
-                          borderColor:
-                            recordDetail.record.status === 'full'
-                              ? '#10B981'
-                              : recordDetail.record.status === 'half'
-                              ? '#F59E0B'
-                              : '#EF4444',
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.bigStatusText,
-                          {
-                            color:
-                              recordDetail.record.status === 'full'
-                                ? '#34D399'
-                                : recordDetail.record.status === 'half'
-                                ? '#FBBF24'
-                                : '#F87171',
-                          },
-                        ]}
-                      >
-                        {recordDetail.record.status === 'full'
-                          ? (lang === 'hi' ? '🟢 पूरा दिन' : '🟢 Full Day')
-                          : recordDetail.record.status === 'half'
-                          ? (lang === 'hi' ? '🟡 आधा दिन' : '🟡 Half Day')
-                          : (lang === 'hi' ? '🔴 काम बंद' : '🔴 Work Stopped')}
-                      </Text>
-                    </View>
-                  </View>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.modalSectionLabel}>{t('allSitePhotos')}</Text>
+                  <Text style={styles.sectionBadge}>{allHistoricalPhotos.length} {lang === 'hi' ? 'फोटो' : 'Photos'}</Text>
                 </View>
 
-                {/* Voice Note */}
-                <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>{t('voiceSectionTitle')}</Text>
-                  {audioItem ? (
-                    <View style={styles.voicePlayerCard}>
-                      <TouchableOpacity
-                        style={styles.playButton}
-                        onPress={() => handleToggleVoicePlayback(audioItem)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.playButtonIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
-                      </TouchableOpacity>
-                      <View style={styles.voiceTrackInfo}>
-                        <Text style={styles.voiceTrackTitle}>
-                          {isPlayingAudio ? t('pause') : t('playPreview')}
-                        </Text>
-                        <Text style={styles.voiceTrackTime}>
-                          {lang === 'hi' ? 'लंबाई: ' : 'Duration: '}{formatTime(audioItem.durationSeconds || 0)}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : (
+                {allHistoricalPhotos.length === 0 ? (
+                  <View style={styles.emptyGalleryBox}>
+                    <Text style={styles.emptyGalleryIcon}>📷</Text>
                     <Text style={styles.noDataText}>
-                      {lang === 'hi' ? 'कोई आवाज संदेश नहीं' : 'No voice note attached'}
+                      {lang === 'hi' ? 'इस साइट पर अभी तक कोई फोटो अपलोड नहीं की गई है।' : 'No photos uploaded yet for this site.'}
                     </Text>
-                  )}
-                </View>
-
-                {/* Photos */}
-                <View style={styles.modalCard}>
-                  <View style={styles.sectionHeaderRow}>
-                    <Text style={styles.modalSectionLabel}>{t('photosSectionTitle')}</Text>
-                    <Text style={styles.sectionBadge}>{photosList.length} {lang === 'hi' ? 'फोटो' : 'Photos'}</Text>
                   </View>
-                  {photosList.length > 0 ? (
-                    <View style={styles.ownerPhotoGrid}>
-                      {photosList.map((p, i) => {
-                        const imgUrl = p.url || `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`;
+                ) : (
+                  <View style={styles.allPhotosGalleryGrid}>
+                    {allHistoricalPhotos.map((p, idx) => {
+                      const imgUrl = p.url || (p.storageKey?.startsWith('http') ? p.storageKey : `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`);
+                      return (
+                        <TouchableOpacity
+                          key={p.id || idx}
+                          style={styles.allPhotoCard}
+                          onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
+                          activeOpacity={0.85}
+                        >
+                          <Image source={{ uri: imgUrl }} style={styles.allPhotoThumb} resizeMode="cover" />
+                          <View style={styles.allPhotoTopBadge}>
+                            <Text style={styles.allPhotoDateText} numberOfLines={1}>
+                              📅 {p.recordDate ? formatChipDate(p.recordDate) : 'Site Photo'}
+                            </Text>
+                          </View>
+                          <View style={styles.allPhotoBottomBadge}>
+                            <Text style={styles.allPhotoGpsText} numberOfLines={1}>
+                              📍 {p.latitude ? `${Number(p.latitude).toFixed(3)}, ${Number(p.longitude).toFixed(3)}` : 'GPS OK'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </ScrollView>
+            ) : (
+              /* TAB 1: DATE-WISE SUBMISSION HISTORY */
+              selectedSiteRecords.length === 0 ? (
+                <View style={styles.emptyGalleryBox}>
+                  <Text style={styles.emptyGalleryIcon}>📋</Text>
+                  <Text style={styles.noDataText}>{t('noPastRecords')}</Text>
+                </View>
+              ) : (
+                <View style={{ flex: 1 }}>
+                  {/* Horizontal Scrollable Date Chips */}
+                  <View style={styles.dateSelectorContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateChipsScroll}>
+                      {selectedSiteRecords.map((rec, index) => {
+                        const isSelected = selectedRecordIndex === index;
+                        const dot = getStatusDot(rec.status);
                         return (
                           <TouchableOpacity
-                            key={p.id || i}
-                            style={styles.ownerPhotoBox}
-                            onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
-                            activeOpacity={0.8}
+                            key={rec.id || index}
+                            style={[styles.dateChip, isSelected && styles.dateChipActive]}
+                            onPress={() => {
+                              setSelectedRecordIndex(index);
+                              if (activeAudioObj) {
+                                try { activeAudioObj.pause(); } catch {}
+                                setActiveAudioObj(null);
+                              }
+                              setIsPlayingAudio(false);
+                            }}
+                            activeOpacity={0.7}
                           >
-                            <Image
-                              source={{ uri: imgUrl }}
-                              style={styles.ownerPhotoThumb}
-                              resizeMode="cover"
-                            />
-                            <View style={styles.watermarkBadge}>
-                              <Text style={styles.watermarkText} numberOfLines={1}>
-                                📍 {p.latitude ? `${Number(p.latitude).toFixed(3)}, ${Number(p.longitude).toFixed(3)}` : 'GPS Tagged'}
-                              </Text>
-                            </View>
+                            <Text style={styles.dateChipDot}>{dot}</Text>
+                            <Text style={[styles.dateChipText, isSelected && styles.dateChipTextActive]}>
+                              {formatChipDate(rec.recordDate)}
+                            </Text>
                           </TouchableOpacity>
                         );
                       })}
-                    </View>
-                  ) : (
-                    <Text style={styles.noDataText}>
-                      {lang === 'hi' ? 'कोई फोटो नहीं है' : 'No photos attached'}
-                    </Text>
-                  )}
-                </View>
+                    </ScrollView>
+                  </View>
 
-                {/* Issues Reported */}
-                <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>{t('issuesReported')}</Text>
-                  {recordDetail.issues && recordDetail.issues.length > 0 ? (
-                    <View style={styles.issuesRow}>
-                      {recordDetail.issues.map((iss) => (
-                        <View key={iss.id} style={styles.issueTag}>
-                          <Text style={styles.issueTagText}>
-                            {iss.icon ? `${iss.icon} ` : '⚠️ '}
-                            {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
-                          </Text>
+                  {/* Selected Record Content */}
+                  {currentRecord && (
+                    <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
+                      {/* Submitter & Timestamp banner */}
+                      <View style={styles.recordSubBanner}>
+                        <Text style={styles.recordSubBannerText}>
+                          📅 {formatChipDate(currentRecord.recordDate)} • {currentRecord.submitterName ? `👷 ${currentRecord.submitterName}` : 'Field Officer'}
+                          {currentRecord.capturedAt ? ` • ${new Date(currentRecord.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                        </Text>
+                      </View>
+
+                      {/* Status */}
+                      <View style={styles.modalCard}>
+                        <Text style={styles.modalSectionLabel}>{t('statusLabel')}</Text>
+                        <View style={styles.modalStatusRow}>
+                          <View
+                            style={[
+                              styles.bigStatusPill,
+                              {
+                                backgroundColor:
+                                  currentRecord.status === 'full'
+                                    ? 'rgba(16,185,129,0.15)'
+                                    : currentRecord.status === 'half'
+                                    ? 'rgba(245,158,11,0.15)'
+                                    : 'rgba(239,68,68,0.15)',
+                                borderColor:
+                                  currentRecord.status === 'full'
+                                    ? '#10B981'
+                                    : currentRecord.status === 'half'
+                                    ? '#F59E0B'
+                                    : '#EF4444',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.bigStatusText,
+                                {
+                                  color:
+                                    currentRecord.status === 'full'
+                                      ? '#34D399'
+                                      : currentRecord.status === 'half'
+                                      ? '#FBBF24'
+                                      : '#F87171',
+                                },
+                              ]}
+                            >
+                              {currentRecord.status === 'full'
+                                ? (lang === 'hi' ? '🟢 पूरा दिन' : '🟢 Full Day')
+                                : currentRecord.status === 'half'
+                                ? (lang === 'hi' ? '🟡 आधा दिन' : '🟡 Half Day')
+                                : (lang === 'hi' ? '🔴 काम बंद' : '🔴 Work Stopped')}
+                            </Text>
+                          </View>
                         </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.noIssuesText}>
-                      ✓ {lang === 'hi' ? 'कोई समस्या नहीं' : 'No issues reported'}
-                    </Text>
+                      </View>
+
+                      {/* Voice Note */}
+                      <View style={styles.modalCard}>
+                        <Text style={styles.modalSectionLabel}>{t('voiceSectionTitle')}</Text>
+                        {audioItem ? (
+                          <View style={styles.voicePlayerCard}>
+                            <TouchableOpacity
+                              style={styles.playButton}
+                              onPress={() => handleToggleVoicePlayback(audioItem)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={styles.playButtonIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
+                            </TouchableOpacity>
+                            <View style={styles.voiceTrackInfo}>
+                              <Text style={styles.voiceTrackTitle}>
+                                {isPlayingAudio ? t('pause') : t('playPreview')}
+                              </Text>
+                              <Text style={styles.voiceTrackTime}>
+                                {lang === 'hi' ? 'लंबाई: ' : 'Duration: '}{formatTime(audioItem.durationSeconds || 0)}
+                              </Text>
+                            </View>
+                          </View>
+                        ) : (
+                          <Text style={styles.noDataText}>
+                            {lang === 'hi' ? 'कोई आवाज संदेश नहीं' : 'No voice note attached'}
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Photos */}
+                      <View style={styles.modalCard}>
+                        <View style={styles.sectionHeaderRow}>
+                          <Text style={styles.modalSectionLabel}>{t('photosSectionTitle')}</Text>
+                          <Text style={styles.sectionBadge}>{photosList.length} {lang === 'hi' ? 'फोटो' : 'Photos'}</Text>
+                        </View>
+                        {photosList.length > 0 ? (
+                          <View style={styles.ownerPhotoGrid}>
+                            {photosList.map((p: any, i: number) => {
+                              const imgUrl = p.url || (p.storageKey?.startsWith('http') ? p.storageKey : `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`);
+                              return (
+                                <TouchableOpacity
+                                  key={p.id || i}
+                                  style={styles.ownerPhotoBox}
+                                  onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
+                                  activeOpacity={0.8}
+                                >
+                                  <Image
+                                    source={{ uri: imgUrl }}
+                                    style={styles.ownerPhotoThumb}
+                                    resizeMode="cover"
+                                  />
+                                  <View style={styles.watermarkBadge}>
+                                    <Text style={styles.watermarkText} numberOfLines={1}>
+                                      📍 {p.latitude ? `${Number(p.latitude).toFixed(3)}, ${Number(p.longitude).toFixed(3)}` : 'GPS Tagged'}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <Text style={styles.noDataText}>
+                            {lang === 'hi' ? 'कोई फोटो नहीं है' : 'No photos attached'}
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Issues Reported */}
+                      <View style={styles.modalCard}>
+                        <Text style={styles.modalSectionLabel}>{t('issuesReported')}</Text>
+                        {currentRecord.issues && currentRecord.issues.length > 0 ? (
+                          <View style={styles.issuesRow}>
+                            {currentRecord.issues.map((iss: any) => (
+                              <View key={iss.id} style={styles.issueTag}>
+                                <Text style={styles.issueTagText}>
+                                  {iss.icon ? `${iss.icon} ` : '⚠️ '}
+                                  {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={styles.noIssuesText}>
+                            ✓ {lang === 'hi' ? 'कोई समस्या नहीं' : 'No issues reported'}
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Reviewed Button */}
+                      <TouchableOpacity
+                        style={[
+                          styles.seenButton,
+                          currentRecord.id && acknowledgedRecords[currentRecord.id] && styles.seenButtonActive,
+                        ]}
+                        onPress={() => {
+                          if (currentRecord?.id) {
+                            setAcknowledgedRecords((prev) => ({
+                              ...prev,
+                              [currentRecord.id]: true,
+                            }));
+                          }
+                          setSelectedSiteId(null);
+                          setSelectedRecordId(null);
+                          if (activeAudioObj) {
+                            try { activeAudioObj.pause(); } catch {}
+                            setActiveAudioObj(null);
+                          }
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.seenButtonText}>
+                          {currentRecord?.id && acknowledgedRecords[currentRecord.id]
+                            ? `✓ ${t('markReviewed')}`
+                            : `✓ ${t('acknowledge')}`}
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
                   )}
                 </View>
-
-                {/* Reviewed Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.seenButton,
-                    acknowledgedRecords[selectedRecordId!] && styles.seenButtonActive,
-                  ]}
-                  onPress={() => {
-                    setAcknowledgedRecords((prev) => ({
-                      ...prev,
-                      [selectedRecordId!]: true,
-                    }));
-                    setSelectedRecordId(null);
-                    if (activeAudioObj) {
-                      try { activeAudioObj.pause(); } catch {}
-                      setActiveAudioObj(null);
-                    }
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.seenButtonText}>
-                    {acknowledgedRecords[selectedRecordId!]
-                      ? `✓ ${t('markReviewed')}`
-                      : `✓ ${t('acknowledge')}`}
-                  </Text>
-                </TouchableOpacity>
-              </ScrollView>
-            ) : null}
+              )
+            )}
           </View>
         </View>
       </Modal>
@@ -1724,6 +1943,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  traySubtitle: {
+    fontSize: 11,
+    color: '#38BDF8',
+    fontWeight: '600',
+    marginTop: 2,
   },
   trayCloseText: {
     fontSize: 15,
@@ -2160,5 +2385,144 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  // Date History & Photos Gallery styles
+  historyTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 8,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  historyTabBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  historyTabBtnActive: {
+    backgroundColor: '#2563EB',
+  },
+  historyTabText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  historyTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  emptyGalleryBox: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyGalleryIcon: {
+    fontSize: 36,
+    marginBottom: 8,
+  },
+  dateSelectorContainer: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
+    backgroundColor: '#161618',
+  },
+  dateChipsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  dateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  dateChipActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    borderColor: '#38BDF8',
+  },
+  dateChipDot: {
+    fontSize: 10,
+  },
+  dateChipText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dateChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  recordSubBanner: {
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+  },
+  recordSubBannerText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  allPhotosGalleryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  allPhotoCard: {
+    width: '48%',
+    height: 140,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  allPhotoThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  allPhotoTopBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    right: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  allPhotoDateText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  allPhotoBottomBadge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  allPhotoGpsText: {
+    color: '#34D399',
+    fontSize: 9,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+    textAlign: 'center',
   },
 });

@@ -498,4 +498,105 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       media: mediaWithUrls,
     });
   });
+
+  // 4. Get All Past Daily Records for a Site (Date-Wise History)
+  fastify.get('/api/v1/sites/:siteId/records', async (request, reply) => {
+    const db = getDb();
+    if (!db) return reply.status(503).send({ error: 'Database unavailable' });
+
+    const user = request.user!;
+    const { siteId } = request.params as { siteId: string };
+
+    // Ensure site belongs to user's organization
+    const [site] = await db
+      .select()
+      .from(sites)
+      .where(and(eq(sites.id, siteId), eq(sites.organizationId, user.organizationId)));
+
+    if (!site) {
+      return reply.status(404).send({ error: 'Work place not found in your organization' });
+    }
+
+    // Fetch all daily records for this site ordered by recordDate DESC
+    const allRecords = await db
+      .select({
+        id: dailyRecords.id,
+        siteId: dailyRecords.siteId,
+        recordDate: dailyRecords.recordDate,
+        status: dailyRecords.status,
+        capturedAt: dailyRecords.capturedAt,
+        receivedAt: dailyRecords.receivedAt,
+        createdAt: dailyRecords.createdAt,
+        updatedAt: dailyRecords.updatedAt,
+        missingPhoto: dailyRecords.missingPhoto,
+        missingVoice: dailyRecords.missingVoice,
+        flags: dailyRecords.flags,
+        submittedBy: dailyRecords.submittedBy,
+        submitterName: users.name,
+      })
+      .from(dailyRecords)
+      .leftJoin(users, eq(dailyRecords.submittedBy, users.id))
+      .where(eq(dailyRecords.siteId, siteId))
+      .orderBy(desc(dailyRecords.recordDate));
+
+    const recordIds = allRecords.map((r) => r.id);
+    let recordIssuesMap: Record<string, any[]> = {};
+    let recordMediaMap: Record<string, any[]> = {};
+
+    if (recordIds.length > 0) {
+      // 1. Issues
+      const issuesRows = await db
+        .select({
+          recordId: recordIssues.recordId,
+          id: issueTypes.id,
+          labelHi: issueTypes.labelHi,
+          labelEn: issueTypes.labelEn,
+          icon: issueTypes.icon,
+        })
+        .from(recordIssues)
+        .innerJoin(issueTypes, eq(recordIssues.issueTypeId, issueTypes.id))
+        .where(inArray(recordIssues.recordId, recordIds));
+
+      for (const row of issuesRows) {
+        if (!recordIssuesMap[row.recordId]) recordIssuesMap[row.recordId] = [];
+        recordIssuesMap[row.recordId].push({
+          id: row.id,
+          labelHi: row.labelHi,
+          labelEn: row.labelEn,
+          icon: row.icon,
+        });
+      }
+
+      // 2. Media (Photos and Audio)
+      const mediaRows = await db
+        .select()
+        .from(media)
+        .where(inArray(media.recordId, recordIds));
+
+      for (const m of mediaRows) {
+        if (!recordMediaMap[m.recordId]) recordMediaMap[m.recordId] = [];
+        let downloadUrl = m.storageKey;
+        if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://') && !downloadUrl.startsWith('data:')) {
+          downloadUrl = `http://localhost:4000/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
+        }
+        recordMediaMap[m.recordId].push({
+          ...m,
+          url: downloadUrl,
+        });
+      }
+    }
+
+    const enriched = allRecords.map((r) => ({
+      ...r,
+      issues: recordIssuesMap[r.id] || [],
+      media: recordMediaMap[r.id] || [],
+    }));
+
+    return reply.status(200).send({
+      siteId,
+      siteName: site.name,
+      totalRecords: enriched.length,
+      records: enriched,
+    });
+  });
 };

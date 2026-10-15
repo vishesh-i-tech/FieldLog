@@ -498,9 +498,9 @@ export default function RecordSubmissionScreen() {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
-          if (prev >= 59) {
+          if (prev >= 299) {
             handleStopRecording();
-            return 60;
+            return 300;
           }
           return prev + 1;
         });

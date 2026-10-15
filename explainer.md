@@ -58,13 +58,13 @@ This document outlines the technologies, libraries, architectural decisions, and
 
 ---
 
-## 6. Audio Note Engine (`MediaRecorder` & Expo AV)
+## 6. Audio Note Engine (`MediaRecorder` & Expo Audio)
 - **Role & Purpose**:
-  Allows field supervisors to record quick audio voice notes (up to 60 seconds) explaining site conditions or blockers.
+  Allows field supervisors to record detailed audio voice notes (extended up to 5 minutes / 300 seconds) explaining site conditions, worker attendance, or blockers.
 - **Under the Hood**:
-  On Web, uses browser `navigator.mediaDevices.getUserMedia({ audio: true })` and `MediaRecorder` encoding into Opus/WebM audio blobs. On Native, integrates `expo-av` audio recording. Uploads to backend storage with duration metadata and allows playback in Owner dashboard.
+  On Web, uses browser `navigator.mediaDevices.getUserMedia({ audio: true })` and `MediaRecorder` encoding into Opus/WebM audio blobs. On Native, integrates `expo-audio` / `expo-av`. Automatic cutoff triggers at 300 seconds (5 min) with live second-by-second countdown and dynamic `MM:SS` duration calculation. Audio payloads are stored with accurate metadata and previewed via the audio player across both the Field Officer and Owner portals.
 - **Summary**:
-  One-tap voice recording giving field staff a hands-free reporting channel.
+  Extended hands-free voice reporting supporting up to 5 minutes of site updates.
 
 ---
 
@@ -98,7 +98,27 @@ This document outlines the technologies, libraries, architectural decisions, and
 
 ---
 
-## 10. Inline Officer Creation & Dynamic Workplace Assignment
+## 10. Date-Wise Historical Records Engine (`/api/v1/sites/:siteId/records`)
+- **Role & Purpose**:
+  Allows the business owner to browse all past daily submissions date-by-date for any work place, rather than only viewing today's latest submission.
+- **Under the Hood**:
+  The backend endpoint `GET /api/v1/sites/:siteId/records` queries all rows in `daily_records` matching the specified `site_id`, ordered by `record_date DESC`. It joins with `users` for officer identification, fetches linked `record_issues` and `issue_types`, and resolves all attached photos and voice notes from `media`. On the frontend, a horizontal scrollable strip of date chips allows instant switching between dates, updating the status badge, voice notes, photos, and issue tags.
+- **Summary**:
+  Complete chronological audit trail for every site with full day-by-day record navigation.
+
+---
+
+## 11. Multi-Date All-Photos Gallery with GPS Watermarks
+- **Role & Purpose**:
+  Provides owners with a centralized visual gallery of all photos ever uploaded for a work place across all dates.
+- **Under the Hood**:
+  Aggregates all media items where `kind === 'photo'` from the site's historical record set. Each card in the responsive 2-column grid displays an overlay with the capture date (e.g. `📅 Oct 16, 2026`) and on-device GPS coordinates (e.g. `📍 28.535, 77.391`). Tapping any photo triggers the full photo inspection modal with high-resolution rendering, coordinates, and timestamp verification.
+- **Summary**:
+  A complete, permanent photo archive for each site accessible in one tap.
+
+---
+
+## 12. Inline Officer Creation & Dynamic Workplace Assignment
 - **Role & Purpose**:
   Streamlines operational workflow by removing separate disconnected officer forms and enabling 1-step inline officer creation directly during workplace setup or reassignment.
 - **Under the Hood**:
@@ -108,7 +128,7 @@ This document outlines the technologies, libraries, architectural decisions, and
 
 ---
 
-## 11. Web Live Camera Viewfinder (`getUserMedia` & Canvas Stream Shutter)
+## 13. Web Live Camera Viewfinder (`getUserMedia` & Canvas Stream Shutter)
 - **Role & Purpose**:
   Eliminates desktop/laptop browser file picker popups when users select "Take Camera Photo", launching a real-time on-screen camera viewfinder instead of navigating to system folders.
 - **Under the Hood**:
