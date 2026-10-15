@@ -137,6 +137,7 @@ export default function OwnerDashboard() {
 
   // Site Category & Inline New Officer creation
   const [newSiteCategory, setNewSiteCategory] = useState('Construction');
+  const [customCategory, setCustomCategory] = useState('');
   const [inlineNewOfficerVisible, setInlineNewOfficerVisible] = useState(false);
   const [inlineOfficerName, setInlineOfficerName] = useState('');
   const [inlineOfficerPhone, setInlineOfficerPhone] = useState('');
@@ -396,6 +397,10 @@ export default function OwnerDashboard() {
     }
     setSavingSite(true);
     try {
+      const resolvedCategory = (newSiteCategory === 'Other' && customCategory.trim())
+        ? customCategory.trim()
+        : (newSiteCategory || 'General');
+
       const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
         method: 'POST',
         headers: {
@@ -404,9 +409,7 @@ export default function OwnerDashboard() {
         },
         body: JSON.stringify({
           name: newSiteName.trim(),
-          locationText: newSiteCategory
-            ? `[${newSiteCategory}] ${newSiteLocation.trim() || 'Site Area'}`
-            : (newSiteLocation.trim() || 'Site Area'),
+          locationText: `[${resolvedCategory}] ${newSiteLocation.trim() || 'Site Area'}`,
         }),
       });
 
@@ -433,6 +436,7 @@ export default function OwnerDashboard() {
       setAddSiteModalVisible(false);
       setNewSiteName('');
       setNewSiteCategory('Construction');
+      setCustomCategory('');
       setNewSiteLocation('');
       setSelectedSupervisorIdsForSite([]);
       setInlineNewOfficerVisible(false);
@@ -842,6 +846,17 @@ export default function OwnerDashboard() {
               ))}
             </View>
 
+            {newSiteCategory === 'Other' && (
+              <TextInput
+                style={[styles.trayInput, { marginTop: -6, marginBottom: 14 }]}
+                placeholder={lang === 'hi' ? 'अपनी साइट श्रेणी दर्ज करें' : 'Enter Custom Category'}
+                placeholderTextColor="#71717A"
+                value={customCategory}
+                onChangeText={setCustomCategory}
+                autoFocus
+              />
+            )}
+
             {/* 3. Location */}
             <Text style={styles.inputLabel}>{t('location')}</Text>
             <TextInput
@@ -852,18 +867,18 @@ export default function OwnerDashboard() {
               onChangeText={setNewSiteLocation}
             />
 
-            {/* 4. Assign Officer with + Add New Officer button */}
+            {/* 4. Assign Officer with + icon on the left */}
             <View style={styles.assignOfficerHeaderRow}>
-              <Text style={styles.inputLabel}>{t('assignFieldOfficer')}</Text>
-              <TouchableOpacity
-                style={styles.addInlineOfficerToggle}
-                onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.addInlineOfficerToggleText}>
-                  {inlineNewOfficerVisible ? t('cancel') : t('addNewOfficer')}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.assignOfficerLeftRow}>
+                <TouchableOpacity
+                  style={styles.plusSquareBtn}
+                  onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.plusSquareText}>{inlineNewOfficerVisible ? '✕' : '+'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.inputLabelNoMargin}>{t('assignFieldOfficer')}</Text>
+              </View>
             </View>
 
             {inlineNewOfficerVisible && (
@@ -974,18 +989,18 @@ export default function OwnerDashboard() {
               </TouchableOpacity>
             </View>
 
-            {/* Header row with + Add New Officer toggle */}
+            {/* Header row with + button on the left */}
             <View style={styles.assignOfficerHeaderRow}>
-              <Text style={styles.inputLabel}>{lang === 'hi' ? 'फील्ड ऑफिसर चुनें:' : 'Select Field Officer(s):'}</Text>
-              <TouchableOpacity
-                style={styles.addInlineOfficerToggle}
-                onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.addInlineOfficerToggleText}>
-                  {inlineNewOfficerVisible ? t('cancel') : t('addNewOfficer')}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.assignOfficerLeftRow}>
+                <TouchableOpacity
+                  style={styles.plusSquareBtn}
+                  onPress={() => setInlineNewOfficerVisible(!inlineNewOfficerVisible)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.plusSquareText}>{inlineNewOfficerVisible ? '✕' : '+'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.inputLabelNoMargin}>{t('assignFieldOfficer')}</Text>
+              </View>
             </View>
 
             {inlineNewOfficerVisible && (
@@ -2067,7 +2082,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  assignOfficerLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  plusSquareBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  plusSquareText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  inputLabelNoMargin: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '700',
   },
   addInlineOfficerToggle: {
     backgroundColor: '#1E293B',

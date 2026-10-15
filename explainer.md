@@ -102,9 +102,9 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Role & Purpose**:
   Streamlines operational workflow by removing separate disconnected officer forms and enabling 1-step inline officer creation directly during workplace setup or reassignment.
 - **Under the Hood**:
-  The "+ Add Field Officer" primary button is consolidated into "+ Add Work Place" and existing site "Assign Officer" modals. Owners can expand an inline `+ Add New Officer` sub-form to register a supervisor with name, mobile phone number, and 4-digit PIN. Upon creation, the officer is immediately selected and linked to the active workplace in a single atomic flow. Work place creation follows a standardized 3-step hierarchy: 1. Site Name, 2. Category Chips (Construction, Warehouse, Retail, etc.), and 3. Location.
+  The primary action is streamlined to a concise `+ Add` button. Work place creation features dynamic category selection with pre-configured chips (*Construction, Warehouse, Retail, Manufacturing, Office, Other*) plus an automatic custom category input when *Other* is selected, allowing custom enterprise classifications (e.g., Solar Farm, Mining, Refinery). The `Assign Officer` section features an integrated `[+]` toggle button on the left of the label, which expands an inline registration sub-form (Officer Name, Mobile Phone Number, 4-digit PIN) that saves and links the new supervisor directly to the workplace in one atomic step.
 - **Summary**:
-  Zero friction onboarding: register and assign officers directly inside workplace workflows.
+  Zero-friction onboarding: custom workplace categorization and left-aligned inline officer creation in a single view.
 
 ---
 
