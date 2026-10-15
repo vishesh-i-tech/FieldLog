@@ -1362,8 +1362,8 @@ export default function RecordSubmissionScreen() {
 
             <Text style={styles.traySubtitle}>
               {lang === 'hi'
-                ? 'एडमिन पोर्टल पर जाने के लिए एडमिन पासवर्ड दर्ज करें:'
-                : 'Enter the Admin account password to switch to the Owner portal:'}
+                ? 'एडमिन पोर्टल पर जाने के लिए पासवर्ड दर्ज करें (डिफ़ॉल्ट: Password123!):'
+                : 'Enter the Admin account password to switch to Owner (Default: Password123!):'}
             </Text>
 
             <TextInput
