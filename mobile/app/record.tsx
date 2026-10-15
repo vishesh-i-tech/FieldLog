@@ -11,6 +11,7 @@ import {
   Image,
   Modal,
   Platform,
+  TextInput,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -18,6 +19,7 @@ import {
   getCurrentGpsLocation,
   compressPhoto,
   generateDevMockPhoto,
+  pickRealDevicePhoto,
   CapturedPhoto,
 } from '../src/services/photo.service';
 import {
@@ -33,10 +35,7 @@ import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { useLanguage } from '../src/i18n';
 import {
   initAuthSession,
-  getCurrentUser,
   getAuthTokens,
-  clearAuthSession,
-  loginOwner,
   loginSupervisor,
 } from '../src/services/auth.state';
 
@@ -47,14 +46,22 @@ interface IssueChip {
   icon?: string;
 }
 
+interface SiteItem {
+  id: string;
+  name: string;
+  locationText?: string;
+}
+
 export default function RecordSubmissionScreen() {
   const router = useRouter();
   const { lang, changeLanguage, t } = useLanguage();
-  const [supervisorName, setSupervisorName] = useState('Field Supervisor');
+  const [supervisorName, setSupervisorName] = useState('Field Officer');
 
-  // Selected work place details
+  // Work Places list and selected work place
+  const [assignedSites, setAssignedSites] = useState<SiteItem[]>([]);
   const [siteName, setSiteName] = useState('South Depot & Warehouse');
   const [siteId, setSiteId] = useState('00000000-0000-0000-0000-000000000001');
+  const [workplaceTrayVisible, setWorkplaceTrayVisible] = useState(false);
 
   // Form State
   const [status, setStatus] = useState<'full' | 'half' | 'stopped' | null>(null);
@@ -67,7 +74,14 @@ export default function RecordSubmissionScreen() {
     { id: '6', labelHi: 'अन्य समस्या', labelEn: 'Other issue' },
   ]);
   const [selectedIssueIds, setSelectedIssueIds] = useState<string[]>([]);
+  const [issuesTrayVisible, setIssuesTrayVisible] = useState(false);
+  const [customIssueInput, setCustomIssueInput] = useState('');
+
+  // Photos State & Viewing Modal
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [photoPickerModalVisible, setPhotoPickerModalVisible] = useState(false);
+  const [inspectingPhoto, setInspectingPhoto] = useState<CapturedPhoto | null>(null);
+  const [locationToast, setLocationToast] = useState<string | null>(null);
 
   // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -76,7 +90,7 @@ export default function RecordSubmissionScreen() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Camera modal state
+  // Native Camera modal state
   const [cameraVisible, setCameraVisible] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -87,13 +101,12 @@ export default function RecordSubmissionScreen() {
   const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const todayDateStr = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
-    weekday: 'long',
+    weekday: 'short',
     day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+    month: 'short',
   });
 
-  // Initialize supervisor auth, load assigned sites, and load dynamic issue chips
+  // Load supervisor session, assigned sites, and issue chips
   useEffect(() => {
     initAuthSession().then(async (user) => {
       let activeUser = user;
@@ -113,19 +126,20 @@ export default function RecordSubmissionScreen() {
 
       if (tokens) {
         try {
-          // 1. Fetch assigned site
-          const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/today`, {
+          // 1. Fetch assigned sites for this supervisor
+          const sitesRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
             headers: { Authorization: `Bearer ${tokens.accessToken}` },
           });
-          if (res.ok) {
-            const data = await res.json();
+          if (sitesRes.ok) {
+            const data = await sitesRes.json();
             if (data.sites && data.sites.length > 0) {
-              setSiteName(data.sites[0].siteName);
-              setSiteId(data.sites[0].siteId);
+              setAssignedSites(data.sites);
+              setSiteName(data.sites[0].name);
+              setSiteId(data.sites[0].id);
             }
           }
 
-          // 2. Fetch real database issue chips with valid UUIDs
+          // 2. Fetch issue chips
           const issuesRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/issue-types`, {
             headers: { Authorization: `Bearer ${tokens.accessToken}` },
           });
@@ -159,33 +173,53 @@ export default function RecordSubmissionScreen() {
     );
   };
 
-  // Open Live Camera Viewfinder (Native: expo-camera, Web: Dev Mock)
-  const handleOpenLiveCamera = async () => {
-    if (photos.length >= 6) {
-      Alert.alert(
-        lang === 'hi' ? 'अधिकतम फोटो' : 'Maximum Photos',
-        t('maxPhotosAlert')
-      );
-      return;
-    }
+  // Add custom issue from tray
+  const handleAddCustomIssue = () => {
+    const text = customIssueInput.trim();
+    if (!text) return;
 
-    // Web Browser Fallback (DEV ONLY)
-    if (Platform.OS === 'web') {
-      if (__DEV__) {
-        const mockPhoto = generateDevMockPhoto(photos.length, new Date().toISOString());
-        setPhotos((prev) => [...prev, mockPhoto]);
-      } else {
-        Alert.alert('Live Camera Required', 'Live camera photos are only supported on physical mobile devices.');
+    const existing = issueChips.find(
+      (c) => c.labelEn.toLowerCase() === text.toLowerCase() || c.labelHi === text
+    );
+
+    if (existing) {
+      if (!selectedIssueIds.includes(existing.id)) {
+        setSelectedIssueIds((prev) => [...prev, existing.id]);
       }
+    } else {
+      const newChip: IssueChip = {
+        id: text,
+        labelEn: text,
+        labelHi: text,
+        icon: '⚠️',
+      };
+      setIssueChips((prev) => [...prev, newChip]);
+      setSelectedIssueIds((prev) => [...prev, text]);
+    }
+
+    setCustomIssueInput('');
+    setIssuesTrayVisible(false);
+  };
+
+  // Open photo options (Camera or Gallery)
+  const handleOpenPhotoOptions = async () => {
+    if (photos.length >= 6) {
+      Alert.alert(lang === 'hi' ? 'अधिकतम फोटो' : 'Maximum Photos', t('maxPhotosAlert'));
       return;
     }
 
+    if (Platform.OS === 'web') {
+      setPhotoPickerModalVisible(true);
+      return;
+    }
+
+    // Native Platform (Android / iOS)
     if (!permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
         Alert.alert(
           lang === 'hi' ? 'कैमरा अनुमति आवश्यक है' : 'Camera Permission Required',
-          lang === 'hi' ? 'लाइव फोटो खींचने के लिए कैमरा अनुमति दें।' : 'Please grant camera access to capture site photos.'
+          lang === 'hi' ? 'फोटो खींचने के लिए कैमरा अनुमति दें।' : 'Please grant camera access to capture site photos.'
         );
         return;
       }
@@ -193,7 +227,55 @@ export default function RecordSubmissionScreen() {
     setCameraVisible(true);
   };
 
-  // Capture Live Photo with GPS Tagging
+  // Handler: Take photo with live camera on web
+  const handlePickFromCamera = async () => {
+    setPhotoPickerModalVisible(false);
+    try {
+      const photo = await pickRealDevicePhoto('camera');
+      if (photo) {
+        setPhotos((prev) => [...prev, photo]);
+        if (photo.locationWarning) {
+          setLocationToast(lang === 'hi' ? '⚠️ डिवाइस का जीपीएस बंद है।' : '⚠️ Device GPS is turned off.');
+          setTimeout(() => setLocationToast(null), 4000);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to capture camera photo:', err);
+    }
+  };
+
+  // Handler: Choose existing device image
+  const handlePickFromGallery = async () => {
+    setPhotoPickerModalVisible(false);
+    try {
+      const photo = await pickRealDevicePhoto('gallery');
+      if (photo) {
+        setPhotos((prev) => [...prev, photo]);
+        if (photo.locationSource === 'exif') {
+          setLocationToast(lang === 'hi' ? `📍 फोटो में मौजूद लोकेशन दर्ज: ${photo.latitude?.toFixed(4)}, ${photo.longitude?.toFixed(4)}` : `📍 Location extracted from photo EXIF: ${photo.latitude?.toFixed(4)}, ${photo.longitude?.toFixed(4)}`);
+          setTimeout(() => setLocationToast(null), 4000);
+        } else if (photo.locationWarning) {
+          setLocationToast(lang === 'hi' ? '⚠️ फोटो में लोकेशन नहीं थी और डिवाइस का जीपीएस बंद है।' : '⚠️ No location in photo & device GPS off.');
+          setTimeout(() => setLocationToast(null), 4000);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pick device photo:', err);
+    }
+  };
+
+  // Handler: Instant quick demo snap
+  const handleQuickDevSnap = async () => {
+    setPhotoPickerModalVisible(false);
+    try {
+      const photo = await generateDevMockPhoto(photos.length, new Date().toISOString());
+      setPhotos((prev) => [...prev, photo]);
+    } catch (err) {
+      console.error('Failed to generate demo photo:', err);
+    }
+  };
+
+  // Capture Live Photo from Native Camera
   const handleCapturePhoto = async () => {
     if (!cameraRef.current) return;
 
@@ -204,11 +286,8 @@ export default function RecordSubmissionScreen() {
       });
 
       if (!photoResult?.uri) return;
-
-      // Close camera modal immediately
       setCameraVisible(false);
 
-      // Acquire GPS coordinates in parallel
       const gps = await getCurrentGpsLocation();
       const compressed = await compressPhoto(photoResult.uri);
 
@@ -229,7 +308,7 @@ export default function RecordSubmissionScreen() {
       console.error('Camera capture error:', err);
       Alert.alert(
         lang === 'hi' ? 'त्रुटि' : 'Error',
-        lang === 'hi' ? 'फोटो खींचने में समस्या आई। कृपया पुनः प्रयास करें।' : 'Failed to capture photo. Please try again.'
+        lang === 'hi' ? 'फोटो खींचने में समस्या आई।' : 'Failed to capture photo.'
       );
       setCameraVisible(false);
     }
@@ -238,6 +317,9 @@ export default function RecordSubmissionScreen() {
   // Delete captured photo
   const handleDeletePhoto = (index: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
+    if (inspectingPhoto) {
+      setInspectingPhoto(null);
+    }
   };
 
   // --- AUDIO RECORDING HANDLERS ---
@@ -247,7 +329,7 @@ export default function RecordSubmissionScreen() {
       if (!hasPermission && !__DEV__) {
         Alert.alert(
           lang === 'hi' ? 'माइक अनुमति आवश्यक है' : 'Microphone Permission Required',
-          lang === 'hi' ? 'आवाज रिकॉर्ड करने के लिए माइक्रोफोन की अनुमति दें।' : 'Please grant microphone access to record voice.'
+          lang === 'hi' ? 'आवाज रिकॉर्ड करने के लिए अनुमति दें।' : 'Please grant microphone access.'
         );
         return;
       }
@@ -256,12 +338,10 @@ export default function RecordSubmissionScreen() {
       setIsRecording(true);
       setRecordingSeconds(0);
 
-      // Start live timer up to 60 seconds
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 59) {
-            // Auto-stop at 60 seconds
             handleStopRecording();
             return 60;
           }
@@ -286,7 +366,7 @@ export default function RecordSubmissionScreen() {
       setIsRecording(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert(lang === 'hi' ? 'रिकॉर्डिंग सहेजने में त्रुटि' : 'Audio Save Error', msg);
+      Alert.alert(lang === 'hi' ? 'त्रुटि' : 'Audio Error', msg);
       setIsRecording(false);
     }
   };
@@ -312,7 +392,6 @@ export default function RecordSubmissionScreen() {
     setRecordingSeconds(0);
   };
 
-  // Format seconds into MM:SS
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainder = secs % 60;
@@ -322,14 +401,10 @@ export default function RecordSubmissionScreen() {
   // Submit Handler
   const handleSubmit = async () => {
     if (!status) {
-      Alert.alert(
-        lang === 'hi' ? 'स्थिति चुनें' : 'Select Status',
-        t('selectStatusAlert')
-      );
+      Alert.alert(lang === 'hi' ? 'स्थिति चुनें' : 'Select Status', t('selectStatusAlert'));
       return;
     }
 
-    // Prompt if photo is missing
     if (photos.length === 0) {
       Alert.alert(
         t('noPhotoAlert'),
@@ -365,19 +440,35 @@ export default function RecordSubmissionScreen() {
     setSubmitStatusText('sending');
 
     try {
-      // Step 1: Photos metadata
-      const uploadedPhotos = photos.map((p, idx) => ({
-        storageKey: `photos/sample_${Date.now()}_${idx}.jpg`,
-        mimeType: 'image/jpeg',
-        sizeBytes: p.sizeBytes,
-        latitude: p.latitude,
-        longitude: p.longitude,
-        accuracyM: p.accuracyM,
-        capturedAt: p.capturedAt,
-        flags: p.isMockLocation ? { mock_location: true } : {},
-      }));
+      // 1. Upload real photos to local dev-storage stub so server holds the file
+      const uploadedPhotos = await Promise.all(
+        photos.map(async (p, idx) => {
+          const fileName = `site_${siteId}_${Date.now()}_${idx}.jpg`;
+          const storageKey = `photos/${fileName}`;
 
-      // Step 2: Audio metadata
+          try {
+            await fetch(`${DEFAULT_API_BASE_URL}/api/v1/dev-storage/upload?key=${encodeURIComponent(storageKey)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dataUrl: p.uri }),
+            });
+          } catch (uploadErr) {
+            console.warn('Storage upload note:', uploadErr);
+          }
+
+          return {
+            storageKey,
+            mimeType: 'image/jpeg',
+            sizeBytes: p.sizeBytes,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            accuracyM: p.accuracyM,
+            capturedAt: p.capturedAt,
+            flags: p.isMockLocation ? { mock_location: true } : {},
+          };
+        })
+      );
+
       let audioPayload: any = undefined;
       if (recordedAudio) {
         audioPayload = {
@@ -389,7 +480,6 @@ export default function RecordSubmissionScreen() {
         };
       }
 
-      // Generate client-side UUID for idempotency
       const clientGeneratedId = generateUuidV4();
       const recordDate = new Date().toISOString().split('T')[0];
 
@@ -419,40 +509,28 @@ export default function RecordSubmissionScreen() {
 
         if (!response.ok) {
           const errData = await response.json();
-          throw new Error(errData.message || 'Submission failed on server');
+          throw new Error(errData.message || 'Submission failed');
         }
       }
 
       setSubmitStatusText('sent');
-      const statusLabel = status === 'full' ? t('statusFull') : status === 'half' ? t('statusHalf') : t('statusStopped');
       setSubmissionFeedback({
         type: 'success',
-        text: lang === 'hi'
-          ? `रिकॉर्ड जमा हो गया! ✅ काम: ${siteName} (${statusLabel}) सर्वर पर सफलतापूर्वक सुरक्षित हो गया।`
-          : `Record submitted successfully! ✅ Site: ${siteName} (${statusLabel}) saved to server.`,
+        text: lang === 'hi' ? 'जमा हो गया! ✅' : 'Submitted successfully! ✅',
       });
 
       if (Platform.OS === 'web') {
-        setTimeout(() => router.push('/owner'), 1500);
+        setTimeout(() => router.push('/owner'), 1200);
       } else {
-        Alert.alert(
-          lang === 'hi' ? 'रिकॉर्ड जमा हो गया! ✅' : 'Record Submitted! ✅',
-          lang === 'hi'
-            ? `काम: ${siteName}\nस्थिति: ${statusLabel}\nफोटो: ${photos.length}\nआवाज: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'कोई नहीं'}\nसर्वर पर सफलतापूर्वक सुरक्षित किया गया।`
-            : `Site: ${siteName}\nStatus: ${statusLabel}\nPhotos: ${photos.length}\nVoice Note: ${recordedAudio ? `${recordedAudio.durationSeconds}s` : 'None'}\nSaved successfully to server.`,
-          [{ text: lang === 'hi' ? 'ठीक है' : 'OK', onPress: () => router.push('/owner') }]
-        );
+        router.push('/owner');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setSubmitStatusText('idle');
       setSubmissionFeedback({
         type: 'error',
-        text: lang === 'hi' ? `भेजने में त्रुटि: ${msg}` : `Submission Error: ${msg}`,
+        text: `${lang === 'hi' ? 'त्रुटि' : 'Error'}: ${msg}`,
       });
-      if (Platform.OS !== 'web') {
-        Alert.alert(lang === 'hi' ? 'भेजने में त्रुटि' : 'Submission Error', msg);
-      }
     } finally {
       setSubmitting(false);
     }
@@ -460,366 +538,521 @@ export default function RecordSubmissionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Top Control Bar with Language Switcher */}
-        <View style={styles.topControlRow}>
-          <View style={styles.userBadge}>
-            <Text style={styles.userBadgeText}>👷 {supervisorName}</Text>
-          </View>
-          <View style={styles.langToggleContainer}>
-            <TouchableOpacity
-              style={[styles.langButton, lang === 'en' && styles.langButtonActive]}
-              onPress={() => changeLanguage('en')}
-            >
-              <Text style={[styles.langButtonText, lang === 'en' && styles.langButtonTextActive]}>
-                English
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.langButton, lang === 'hi' && styles.langButtonActive]}
-              onPress={() => changeLanguage('hi')}
-            >
-              <Text style={[styles.langButtonText, lang === 'hi' && styles.langButtonTextActive]}>
-                हिंदी
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Switch to Owner Reviewer Mode Banner */}
-        <TouchableOpacity
-          style={styles.switchOwnerBanner}
-          onPress={async () => {
-            try {
-              await loginOwner('owner@fieldlog.dev', 'Password123!');
-              router.push('/owner');
-            } catch {
-              router.push('/login');
-            }
-          }}
-          activeOpacity={0.8}
+      <View style={styles.mainWrapper}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.switchOwnerIcon}>👑</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.switchOwnerTitle}>{t('switchToOwner')}</Text>
-            <Text style={styles.switchOwnerSub}>{t('ownerSubtitle')}</Text>
+          {/* TOP BAR: Role Toggle (Admin / Field Officer) & Compact Language Toggle (EN / HN) */}
+          <View style={styles.topBar}>
+            {/* Role Switcher */}
+            <View style={styles.roleToggle}>
+              <TouchableOpacity
+                style={styles.roleBtn}
+                onPress={() => router.push('/owner')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.roleBtnText}>{t('admin')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.roleBtn, styles.roleBtnActive]}
+                activeOpacity={1}
+              >
+                <Text style={[styles.roleBtnText, styles.roleBtnTextActive]}>
+                  {t('fieldOfficer')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Language Switcher: EN / HN */}
+            <View style={styles.langToggle}>
+              <TouchableOpacity
+                style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
+                onPress={() => changeLanguage('en')}
+              >
+                <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
+                  EN
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
+                onPress={() => changeLanguage('hi')}
+              >
+                <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
+                  HN
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={styles.switchOwnerArrow}>→</Text>
-        </TouchableOpacity>
 
-        {/* Work Place Header */}
-        <View style={styles.siteHeaderCard}>
-          <Text style={styles.siteLabel}>{t('siteName')}</Text>
-          <Text style={styles.siteName}>{siteName}</Text>
-          <Text style={styles.todayDateText}>📅 {todayDateStr}</Text>
-        </View>
+          {/* WORK PLACE TRAY SELECTOR */}
+          <TouchableOpacity
+            style={styles.siteCard}
+            onPress={() => setWorkplaceTrayVisible(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.siteInfoRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.siteHeaderLabel}>{t('siteName')}</Text>
+                <View style={styles.siteNameDropdownRow}>
+                  <Text style={styles.siteNameText} numberOfLines={1}>
+                    📍 {siteName}
+                  </Text>
+                  <Text style={styles.dropdownIcon}>▾</Text>
+                </View>
+              </View>
+              <Text style={styles.todayDateBadge}>{todayDateStr}</Text>
+            </View>
+          </TouchableOpacity>
 
-        {/* 1. STATUS SELECTION (3 BIG BUTTONS) */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>{t('statusSectionTitle')}</Text>
-          <View style={styles.statusButtonsContainer}>
-            {/* Full Day */}
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                status === 'full' && styles.statusButtonActiveFull,
-              ]}
-              onPress={() => setStatus('full')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.statusIcon}>🟢</Text>
-              <Text style={[styles.statusText, status === 'full' && styles.statusTextActive]}>
-                {t('statusFull')}
-              </Text>
-              <Text style={styles.statusSubtext}>{t('statusFullSub')}</Text>
-            </TouchableOpacity>
+          {/* LOCATION STATUS TOAST */}
+          {locationToast && (
+            <View style={styles.locationToastBox}>
+              <Text style={styles.locationToastText}>{locationToast}</Text>
+            </View>
+          )}
 
-            {/* Half Day */}
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                status === 'half' && styles.statusButtonActiveHalf,
-              ]}
-              onPress={() => setStatus('half')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.statusIcon}>🟡</Text>
-              <Text style={[styles.statusText, status === 'half' && styles.statusTextActive]}>
-                {t('statusHalf')}
-              </Text>
-              <Text style={styles.statusSubtext}>{t('statusHalfSub')}</Text>
-            </TouchableOpacity>
+          {/* WORK STATUS (Unnumbered, 3 Compact Buttons) */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t('statusSectionTitle')}</Text>
+            <View style={styles.statusRow}>
+              <TouchableOpacity
+                style={[styles.statusBtn, status === 'full' && styles.statusBtnActiveFull]}
+                onPress={() => setStatus('full')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.statusIcon}>🟢</Text>
+                <Text style={[styles.statusLabel, status === 'full' && styles.statusLabelActive]}>
+                  {t('statusFull')}
+                </Text>
+              </TouchableOpacity>
 
-            {/* Work Stopped */}
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                status === 'stopped' && styles.statusButtonActiveStopped,
-              ]}
-              onPress={() => setStatus('stopped')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.statusIcon}>🔴</Text>
-              <Text style={[styles.statusText, status === 'stopped' && styles.statusTextActive]}>
-                {t('statusStopped')}
-              </Text>
-              <Text style={styles.statusSubtext}>{t('statusStoppedSub')}</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.statusBtn, status === 'half' && styles.statusBtnActiveHalf]}
+                onPress={() => setStatus('half')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.statusIcon}>🟡</Text>
+                <Text style={[styles.statusLabel, status === 'half' && styles.statusLabelActive]}>
+                  {t('statusHalf')}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.statusBtn, status === 'stopped' && styles.statusBtnActiveStopped]}
+                onPress={() => setStatus('stopped')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.statusIcon}>🔴</Text>
+                <Text style={[styles.statusLabel, status === 'stopped' && styles.statusLabelActive]}>
+                  {t('statusStopped')}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
 
-        {/* 2. LIVE PHOTOS (NO GALLERY PICKER) */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>{t('photosSectionTitle')}</Text>
-            <Text style={styles.photoCountText}>{photos.length}/6</Text>
-          </View>
-          <Text style={styles.sectionHint}>
-            {t('photosHint')}
-          </Text>
+          {/* PHOTOS (Real Geo-Tagged Photo Clickable Preview) */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>{t('photosSectionTitle')}</Text>
+              <Text style={styles.cardCounter}>{photos.length}/6</Text>
+            </View>
 
-          {/* Photos Grid */}
-          <View style={styles.photoGrid}>
-            {photos.map((photo, index) => (
-              <View key={index} style={styles.photoThumbnailContainer}>
-                <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
-                {photo.isDevMock && (
-                  <View style={styles.devMockBadge}>
-                    <Text style={styles.devMockBadgeText}>DEV MOCK</Text>
-                  </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
+              <View style={styles.photosRow}>
+                {photos.map((photo, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.photoBox}
+                    onPress={() => setInspectingPhoto(photo)}
+                    activeOpacity={0.75}
+                  >
+                    <Image source={{ uri: photo.uri }} style={styles.photoImg} resizeMode="cover" />
+                    <TouchableOpacity
+                      style={styles.deletePhotoBtn}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleDeletePhoto(index);
+                      }}
+                    >
+                      <Text style={styles.deletePhotoIcon}>✕</Text>
+                    </TouchableOpacity>
+                    <View style={styles.geoStamp}>
+                      <Text style={styles.geoStampText}>
+                        📍 {photo.latitude ? `${photo.latitude.toFixed(3)}, ${photo.longitude?.toFixed(3)}` : 'GPS OK'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+
+                {photos.length < 6 && (
+                  <TouchableOpacity
+                    style={styles.takePhotoBtn}
+                    onPress={handleOpenPhotoOptions}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.takePhotoIcon}>📷</Text>
+                    <Text style={styles.takePhotoText}>{t('takeLivePhoto')}</Text>
+                  </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={styles.deletePhotoButton}
-                  onPress={() => handleDeletePhoto(index)}
-                >
-                  <Text style={styles.deletePhotoText}>✕</Text>
-                </TouchableOpacity>
-                <View style={styles.geoBadge}>
-                  <Text style={styles.geoBadgeText}>
-                    📍 {photo.latitude ? `${photo.latitude.toFixed(4)}, ${photo.longitude?.toFixed(4)}` : 'GPS Tagged'}
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* VOICE NOTE (Unnumbered, Compact Horizontal Strip) */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>{t('voiceSectionTitle')}</Text>
+              {recordedAudio && (
+                <Text style={styles.audioDurationText}>⏱️ {formatTime(recordedAudio.durationSeconds)}</Text>
+              )}
+            </View>
+
+            {isRecording ? (
+              <View style={styles.voiceStripRecording}>
+                <View style={styles.recordingPulse}>
+                  <View style={styles.redDot} />
+                  <Text style={styles.recordingText}>
+                    {t('recording')} ({formatTime(recordingSeconds)})
                   </Text>
                 </View>
+                <TouchableOpacity
+                  style={styles.voiceActionBtnStop}
+                  onPress={handleStopRecording}
+                >
+                  <Text style={styles.voiceActionTextStop}>⏹️ {t('stopRecording')}</Text>
+                </TouchableOpacity>
               </View>
-            ))}
-
-            {photos.length < 6 && (
+            ) : recordedAudio ? (
+              <View style={styles.voiceStripReady}>
+                <View style={styles.voiceReadyInfo}>
+                  <Text style={styles.voiceMicIcon}>🎙️</Text>
+                  <Text style={styles.voiceReadyLabel}>
+                    {t('todayVoiceNote')} ({formatTime(recordedAudio.durationSeconds)})
+                  </Text>
+                </View>
+                <View style={styles.voiceActionsRow}>
+                  <TouchableOpacity
+                    style={styles.voicePlayBtn}
+                    onPress={handleTogglePlayback}
+                  >
+                    <Text style={styles.voicePlayText}>
+                      {isPlayingAudio ? '⏸️' : '▶️'} {isPlayingAudio ? t('pause') : t('playPreview')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.voiceResetBtn}
+                    onPress={handleDeleteAudio}
+                  >
+                    <Text style={styles.voiceResetText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
               <TouchableOpacity
-                style={styles.addPhotoButton}
-                onPress={handleOpenLiveCamera}
+                style={styles.voiceStripIdle}
+                onPress={handleStartRecording}
                 activeOpacity={0.8}
               >
-                <Text style={styles.addPhotoIcon}>📷</Text>
-                <Text style={styles.addPhotoText}>{t('takeLivePhoto')}</Text>
-                <Text style={styles.addPhotoSubtext}>{t('liveCamera')}</Text>
+                <Text style={styles.voiceMicIcon}>🎙️</Text>
+                <Text style={styles.voiceIdleText}>{t('tapToRecord')} ({t('tapToRecordSub')})</Text>
               </TouchableOpacity>
             )}
           </View>
-        </View>
 
-        {/* 3. VOICE NOTE RECORDING */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>{t('voiceSectionTitle')}</Text>
-            {recordedAudio && (
-              <Text style={styles.audioDurationBadge}>
-                ⏱️ {formatTime(recordedAudio.durationSeconds)}
-              </Text>
-            )}
-          </View>
-          <Text style={styles.sectionHint}>
-            {t('voiceHint')}
-          </Text>
-
-          {/* Case A: Active Recording State */}
-          {isRecording ? (
-            <View style={styles.recordingActiveCard}>
-              <View style={styles.recordingPulseHeader}>
-                <View style={styles.recordingDot} />
-                <Text style={styles.recordingLiveText}>{t('recording')}</Text>
-              </View>
-              <Text style={styles.recordingTimerText}>
-                {formatTime(recordingSeconds)} / 01:00
-              </Text>
-              <View style={styles.progressBarTrack}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    { width: `${Math.min(100, (recordingSeconds / 60) * 100)}%` },
-                  ]}
-                />
-              </View>
-
+          {/* ISSUES (Unnumbered, No Optional, Quick Chips + Tray Add) */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>{t('issuesSectionTitle')}</Text>
               <TouchableOpacity
-                style={styles.stopRecordingButton}
-                onPress={handleStopRecording}
-                activeOpacity={0.8}
+                style={styles.addCustomBtn}
+                onPress={() => setIssuesTrayVisible(true)}
               >
-                <Text style={styles.stopRecordingIcon}>⏹️</Text>
-                <Text style={styles.stopRecordingText}>{t('stopRecording')}</Text>
+                <Text style={styles.addCustomBtnText}>+ {t('customIssue')}</Text>
               </TouchableOpacity>
             </View>
-          ) : recordedAudio ? (
-            /* Case B: Audio Recorded Preview & Playback */
-            <View style={styles.recordedAudioPreviewCard}>
-              <View style={styles.audioPreviewInfoRow}>
-                <View style={styles.audioIconBox}>
-                  <Text style={styles.audioBoxIcon}>🎙️</Text>
-                </View>
-                <View style={styles.audioMetaColumn}>
-                  <View style={styles.audioMetaTitleRow}>
-                    <Text style={styles.audioFileTitle}>{t('todayVoiceNote')}</Text>
-                    {recordedAudio.isDevMock && (
-                      <View style={styles.devMockBadgeAudio}>
-                        <Text style={styles.devMockBadgeText}>DEV MOCK</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.audioFileSub}>
-                    {lang === 'hi' ? 'लंबाई: ' : 'Duration: '}{formatTime(recordedAudio.durationSeconds)} • {(recordedAudio.sizeBytes / 1024).toFixed(0)} KB
-                  </Text>
-                </View>
-              </View>
 
-              {/* Play / Pause and Delete Controls */}
-              <View style={styles.audioActionButtonsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.playAudioButton,
-                    isPlayingAudio && styles.playAudioButtonActive,
-                  ]}
-                  onPress={handleTogglePlayback}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.playAudioIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
-                  <Text style={styles.playAudioText}>
-                    {isPlayingAudio ? t('pause') : t('playPreview')}
-                  </Text>
-                </TouchableOpacity>
+            <View style={styles.chipsWrap}>
+              {issueChips.map((chip) => {
+                const isSelected = selectedIssueIds.includes(chip.id);
+                const label = lang === 'hi' ? chip.labelHi : (chip.labelEn || chip.labelHi);
 
-                <TouchableOpacity
-                  style={styles.deleteAudioButton}
-                  onPress={handleDeleteAudio}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.deleteAudioIcon}>🗑️</Text>
-                  <Text style={styles.deleteAudioText}>{t('reRecord')}</Text>
-                </TouchableOpacity>
-              </View>
+                return (
+                  <TouchableOpacity
+                    key={chip.id}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => toggleIssueChip(chip.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {chip.icon ? `${chip.icon} ` : ''}{label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          ) : (
-            /* Case C: Idle State - Start Recording */
-            <TouchableOpacity
-              style={styles.startRecordButton}
-              onPress={handleStartRecording}
-              activeOpacity={0.8}
+          </View>
+
+          {/* FEEDBACK BANNER */}
+          {submissionFeedback && (
+            <View
+              style={[
+                styles.feedback,
+                submissionFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
+              ]}
             >
-              <View style={styles.micIconCircle}>
-                <Text style={styles.micIconText}>🎙️</Text>
-              </View>
-              <View style={styles.startRecordTextContainer}>
-                <Text style={styles.startRecordTitle}>{t('tapToRecord')}</Text>
-                <Text style={styles.startRecordSubtitle}>
-                  {t('tapToRecordSub')}
+              <Text style={styles.feedbackText}>{submissionFeedback.text}</Text>
+            </View>
+          )}
+
+          {/* SUBMIT BUTTON (Strictly "Submit" / "जमा करें") */}
+          <TouchableOpacity
+            style={[styles.submitBtn, (!status || submitting) && styles.submitBtnDisabled]}
+            onPress={handleSubmit}
+            disabled={submitting}
+            activeOpacity={0.8}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.submitBtnText}>
+                {submitStatusText === 'sent' ? `✅ ${t('sent')}` : t('submit')}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      {/* FULL PHOTO INSPECTION MODAL (User can inspect their uploaded/clicked image) */}
+      <Modal
+        visible={!!inspectingPhoto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInspectingPhoto(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setInspectingPhoto(null)}
+          />
+          <View style={styles.inspectPhotoCard}>
+            <View style={styles.inspectHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inspectTitle}>{lang === 'hi' ? 'साइट फोटो' : 'Site Photo'}</Text>
+                <Text style={styles.inspectSub}>
+                  {inspectingPhoto?.locationSource === 'exif'
+                    ? (lang === 'hi' ? '📱 फोटो फाइल से लोकेशन प्राप्त' : '📱 Location extracted from photo EXIF')
+                    : (lang === 'hi' ? '📡 डिवाइस जीपीएस' : '📡 Real Device GPS')}
                 </Text>
               </View>
-            </TouchableOpacity>
-          )}
-        </View>
+              <TouchableOpacity onPress={() => setInspectingPhoto(null)} style={{ padding: 4 }}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* 4. ISSUE CHIPS (MULTI-SELECT) */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>{t('issuesSectionTitle')}</Text>
-          <Text style={styles.sectionHint}>{t('issuesHint')}</Text>
+            {inspectingPhoto && (
+              <View style={styles.inspectImageWrapper}>
+                <Image
+                  source={{ uri: inspectingPhoto.uri }}
+                  style={styles.inspectImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
 
-          <View style={styles.chipsContainer}>
-            {issueChips.map((chip) => {
-              const isSelected = selectedIssueIds.includes(chip.id);
-              const primaryLabel = lang === 'hi' ? chip.labelHi : (chip.labelEn || chip.labelHi);
-              const secondaryLabel = lang === 'hi' ? chip.labelEn : chip.labelHi;
+            <View style={styles.inspectDetailsBox}>
+              <Text style={styles.inspectGpsText}>
+                📍 Lat: {inspectingPhoto?.latitude?.toFixed(5)}° N, Long: {inspectingPhoto?.longitude?.toFixed(5)}° E
+              </Text>
+              <Text style={styles.inspectTimeText}>
+                📅 {inspectingPhoto?.capturedAt ? new Date(inspectingPhoto.capturedAt).toLocaleString() : ''}
+              </Text>
+              {inspectingPhoto?.locationWarning ? (
+                <Text style={styles.inspectWarningText}>⚠️ {inspectingPhoto.locationWarning}</Text>
+              ) : null}
+            </View>
 
-              return (
-                <TouchableOpacity
-                  key={chip.id}
-                  style={[styles.chipButton, isSelected && styles.chipButtonSelected]}
-                  onPress={() => toggleIssueChip(chip.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {primaryLabel}
-                  </Text>
-                  {secondaryLabel && (
-                    <Text style={[styles.chipSubtext, isSelected && styles.chipSubtextSelected]}>
-                      {secondaryLabel}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Submission Feedback Banner */}
-        {submissionFeedback && (
-          <View
-            style={[
-              styles.feedbackBanner,
-              submissionFeedback.type === 'success'
-                ? styles.feedbackBannerSuccess
-                : styles.feedbackBannerError,
-            ]}
-          >
-            <Text
-              style={[
-                styles.feedbackBannerText,
-                submissionFeedback.type === 'success'
-                  ? styles.feedbackTextSuccess
-                  : styles.feedbackTextError,
-              ]}
-            >
-              {submissionFeedback.text}
-            </Text>
-          </View>
-        )}
-
-        {/* SUBMIT BUTTON */}
-        <TouchableOpacity
-          style={[styles.submitButton, (!status || submitting) && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-          activeOpacity={0.8}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={styles.submitButtonText}>
-              {submitStatusText === 'sent'
-                ? `✅ ${t('sent')}`
-                : submitStatusText === 'sending'
-                ? t('submitting')
-                : t('submit')}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* FULLSCREEN LIVE CAMERA MODAL */}
-      <Modal visible={cameraVisible} animationType="slide">
-        <SafeAreaView style={styles.cameraModalContainer}>
-          <CameraView ref={cameraRef} style={styles.cameraView} facing="back">
-            <View style={styles.cameraControlsContainer}>
+            <View style={styles.inspectActionsRow}>
               <TouchableOpacity
-                style={styles.closeCameraButton}
+                style={styles.inspectCloseBtn}
+                onPress={() => setInspectingPhoto(null)}
+              >
+                <Text style={styles.inspectCloseBtnText}>{t('close')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PHOTO SOURCE SELECTION TRAY MODAL */}
+      <Modal
+        visible={photoPickerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoPickerModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setPhotoPickerModalVisible(false)}
+          />
+          <View style={styles.traySheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>{t('takeLivePhoto')}</Text>
+              <TouchableOpacity onPress={() => setPhotoPickerModalVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.pickerOptionBtn} onPress={handlePickFromCamera}>
+              <Text style={styles.pickerOptionIcon}>📷</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickerOptionTitle}>{lang === 'hi' ? 'कैमरा से लाइव फोटो लें' : 'Take Camera Photo'}</Text>
+                <Text style={styles.pickerOptionSub}>{lang === 'hi' ? 'डिवाइस का कैमरा खोलें' : 'Open real device camera'}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.pickerOptionBtn} onPress={handlePickFromGallery}>
+              <Text style={styles.pickerOptionIcon}>📁</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickerOptionTitle}>{lang === 'hi' ? 'डिवाइस से फोटो चुनें' : 'Choose Existing Device Image'}</Text>
+                <Text style={styles.pickerOptionSub}>{lang === 'hi' ? 'गैलरी / फाइल से चुनें (लोकेशन सहित)' : 'Pick from device storage with EXIF location'}</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.pickerOptionBtn, { borderColor: '#334155' }]} onPress={handleQuickDevSnap}>
+              <Text style={styles.pickerOptionIcon}>⚡</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pickerOptionTitle}>{lang === 'hi' ? 'त्वरित डेमो फोटो' : 'Quick Demo Photo'}</Text>
+                <Text style={styles.pickerOptionSub}>{lang === 'hi' ? 'परीक्षण के लिए' : 'Instant snapshot'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* WORK PLACE TRAY MODAL */}
+      <Modal
+        visible={workplaceTrayVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWorkplaceTrayVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setWorkplaceTrayVisible(false)}
+          />
+          <View style={styles.traySheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>{t('selectWork')}</Text>
+              <TouchableOpacity onPress={() => setWorkplaceTrayVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 280 }}>
+              {assignedSites.length === 0 ? (
+                <View style={styles.emptySitesBox}>
+                  <Text style={styles.emptySitesText}>
+                    {lang === 'hi'
+                      ? 'मालिक द्वारा अभी तक कोई कार्यस्थल नहीं सौंपा गया।'
+                      : 'No work place assigned by owner yet.'}
+                  </Text>
+                </View>
+              ) : (
+                assignedSites.map((site) => {
+                  const isCurrent = site.id === siteId;
+                  return (
+                    <TouchableOpacity
+                      key={site.id}
+                      style={[styles.traySiteItem, isCurrent && styles.traySiteItemActive]}
+                      onPress={() => {
+                        setSiteId(site.id);
+                        setSiteName(site.name);
+                        setWorkplaceTrayVisible(false);
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.traySiteName, isCurrent && styles.traySiteNameActive]}>
+                          {site.name}
+                        </Text>
+                        {site.locationText ? (
+                          <Text style={styles.traySiteLocation}>{site.locationText}</Text>
+                        ) : null}
+                      </View>
+                      {isCurrent && <Text style={styles.trayCheckmark}>✓</Text>}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ISSUES TRAY MODAL */}
+      <Modal
+        visible={issuesTrayVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIssuesTrayVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setIssuesTrayVisible(false)}
+          />
+          <View style={styles.traySheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>{t('customIssue')}</Text>
+              <TouchableOpacity onPress={() => setIssuesTrayVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.traySubtitle}>{t('enterCustomIssue')}</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder={lang === 'hi' ? 'समस्या का विवरण लिखें...' : 'Type issue description...'}
+              placeholderTextColor="#71717A"
+              value={customIssueInput}
+              onChangeText={setCustomIssueInput}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={styles.trayAddBtn}
+              onPress={handleAddCustomIssue}
+            >
+              <Text style={styles.trayAddBtnText}>+ {t('save')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NATIVE CAMERA MODAL (PHYSICAL DEVICE ONLY) */}
+      <Modal visible={cameraVisible} animationType="slide">
+        <SafeAreaView style={styles.cameraModal}>
+          <CameraView ref={cameraRef} style={styles.cameraView} facing="back">
+            <View style={styles.cameraControls}>
+              <TouchableOpacity
+                style={styles.closeCameraBtn}
                 onPress={() => setCameraVisible(false)}
               >
                 <Text style={styles.closeCameraText}>✕ {t('close')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.shutterButton}
+                style={styles.shutterBtn}
                 onPress={handleCapturePhoto}
                 activeOpacity={0.7}
               >
-                <View style={styles.shutterButtonInner} />
+                <View style={styles.shutterBtnInner} />
               </TouchableOpacity>
             </View>
           </CameraView>
@@ -832,573 +1065,675 @@ export default function RecordSubmissionScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0B0F19',
+    backgroundColor: '#121212',
+  },
+  mainWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+    backgroundColor: '#121212',
   },
   container: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
-  topControlRow: {
+  // Top Control Bar
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  userBadge: {
-    backgroundColor: '#1E293B',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  userBadgeText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  langToggleContainer: {
+  roleToggle: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
-    borderRadius: 20,
-    padding: 3,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    padding: 2,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#2C2C2E',
   },
-  langButton: {
-    paddingVertical: 4,
+  roleBtn: {
+    paddingVertical: 5,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: 6,
   },
-  langButtonActive: {
+  roleBtnActive: {
     backgroundColor: '#2563EB',
   },
-  langButtonText: {
-    color: '#94A3B8',
+  roleBtnText: {
+    color: '#A1A1AA',
     fontSize: 12,
     fontWeight: '700',
   },
-  langButtonTextActive: {
+  roleBtnTextActive: {
     color: '#FFFFFF',
   },
-  switchOwnerBanner: {
+  langToggle: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#7C3AED',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  switchOwnerIcon: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  switchOwnerTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  switchOwnerSub: {
-    color: '#E9D5FF',
-    fontSize: 11,
-    marginTop: 1,
-    fontWeight: '500',
-  },
-  switchOwnerArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-    marginLeft: 8,
-  },
-  siteHeaderCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 16,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    padding: 2,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#2C2C2E',
   },
-  siteLabel: {
+  langBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  langBtnActive: {
+    backgroundColor: '#2563EB',
+  },
+  langBtnText: {
+    color: '#A1A1AA',
     fontSize: 12,
-    color: '#94A3B8',
+    fontWeight: '800',
+  },
+  langBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  // Work Place Card
+  siteCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  siteInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  siteHeaderLabel: {
+    fontSize: 10,
+    color: '#A1A1AA',
     textTransform: 'uppercase',
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  siteName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginTop: 4,
-  },
-  todayDateText: {
-    fontSize: 14,
-    color: '#38BDF8',
-    marginTop: 6,
-    fontWeight: '600',
-  },
-  sectionCard: {
-    backgroundColor: '#131C2E',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  sectionHeaderRow: {
+  siteNameDropdownRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 2,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#F1F5F9',
-    marginBottom: 6,
-  },
-  photoCountText: {
-    fontSize: 14,
+  siteNameText: {
+    fontSize: 15,
     fontWeight: '700',
+    color: '#FFFFFF',
+    maxWidth: 220,
+  },
+  dropdownIcon: {
     color: '#38BDF8',
-  },
-  audioDurationBadge: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#34D399',
-    backgroundColor: 'rgba(52, 211, 153, 0.1)',
-    paddingVertical: 2,
+    marginLeft: 4,
+    fontWeight: '800',
+  },
+  todayDateBadge: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    backgroundColor: '#262626',
+    paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 6,
   },
-  sectionHint: {
-    fontSize: 13,
-    color: '#94A3B8',
-    marginBottom: 14,
-    lineHeight: 18,
+  locationToastBox: {
+    backgroundColor: 'rgba(37, 99, 235, 0.15)',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 8,
   },
-  statusButtonsContainer: {
+  locationToastText: {
+    color: '#60A5FA',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Reusable Card Container
+  card: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
-  },
-  statusButton: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#334155',
-    minHeight: 80,
-    justifyContent: 'center',
+    marginBottom: 6,
   },
-  statusButtonActiveFull: {
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F1F5F9',
+    marginBottom: 4,
+  },
+  cardCounter: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+  // Status Selection
+  statusRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  statusBtn: {
+    flex: 1,
+    backgroundColor: '#121212',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#2C2C2E',
+  },
+  statusBtnActiveFull: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     borderColor: '#10B981',
   },
-  statusButtonActiveHalf: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  statusBtnActiveHalf: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     borderColor: '#F59E0B',
   },
-  statusButtonActiveStopped: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+  statusBtnActiveStopped: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderColor: '#EF4444',
   },
   statusIcon: {
-    fontSize: 18,
-    marginBottom: 4,
-  },
-  statusText: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#CBD5E1',
+    marginBottom: 2,
   },
-  statusTextActive: {
+  statusLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#A1A1AA',
+  },
+  statusLabelActive: {
     color: '#FFFFFF',
   },
-  statusSubtext: {
-    fontSize: 11,
-    color: '#94A3B8',
+  // Photos Row
+  photosScroll: {
     marginTop: 2,
   },
-  photoGrid: {
+  photosRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
   },
-  photoThumbnailContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
+  photoBox: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
     borderColor: '#334155',
   },
-  photoThumbnail: {
+  photoImg: {
     width: '100%',
     height: '100%',
   },
-  devMockBadge: {
+  deletePhotoBtn: {
     position: 'absolute',
-    top: 4,
-    left: 4,
-    backgroundColor: '#F59E0B',
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-    borderRadius: 4,
-    zIndex: 10,
-  },
-  devMockBadgeAudio: {
-    backgroundColor: '#F59E0B',
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  devMockBadgeText: {
-    color: '#000000',
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  deletePhotoButton: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
+    top: 2,
+    right: 2,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
+    borderRadius: 10,
+    width: 18,
+    height: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
-  deletePhotoText: {
+  deletePhotoIcon: {
     color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: '800',
+    fontSize: 10,
   },
-  geoBadge: {
+  geoStamp: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
-  geoBadgeText: {
+  geoStampText: {
     color: '#34D399',
-    fontSize: 9,
-    fontWeight: '600',
+    fontSize: 7,
+    fontWeight: '700',
     textAlign: 'center',
   },
-  addPhotoButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    borderWidth: 2,
+  takePhotoBtn: {
+    width: 68,
+    height: 68,
+    borderRadius: 8,
+    borderWidth: 1.5,
     borderColor: '#38BDF8',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(56, 189, 248, 0.08)',
   },
-  addPhotoIcon: {
-    fontSize: 26,
-    marginBottom: 4,
+  takePhotoIcon: {
+    fontSize: 18,
+    marginBottom: 2,
   },
-  addPhotoText: {
-    fontSize: 12,
+  takePhotoText: {
+    fontSize: 10,
     fontWeight: '700',
     color: '#38BDF8',
+    textAlign: 'center',
   },
-  addPhotoSubtext: {
-    fontSize: 9,
-    color: '#94A3B8',
+  // Voice Note (Compact Horizontal Strip)
+  audioDurationText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#34D399',
   },
-  // Voice Recording Styles
-  startRecordButton: {
+  voiceStripIdle: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    minHeight: 64,
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  micIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  micIconText: {
-    fontSize: 22,
-  },
-  startRecordTextContainer: {
-    flex: 1,
-  },
-  startRecordTitle: {
+  voiceMicIcon: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#F8FAFC',
+    marginRight: 8,
   },
-  startRecordSubtitle: {
+  voiceIdleText: {
     fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
+    color: '#E2E8F0',
+    fontWeight: '600',
   },
-  recordingActiveCard: {
+  voiceStripRecording: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-    alignItems: 'center',
-  },
-  recordingPulseHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  recordingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#EF4444',
-    marginRight: 8,
-  },
-  recordingLiveText: {
-    color: '#EF4444',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  recordingTimerText: {
-    color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: '900',
-    fontFamily: 'monospace',
-    marginVertical: 4,
-  },
-  progressBarTrack: {
-    width: '100%',
-    height: 6,
-    backgroundColor: '#334155',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginVertical: 10,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#EF4444',
-  },
-  stopRecordingButton: {
-    backgroundColor: '#EF4444',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-    marginTop: 6,
-    width: '100%',
-    minHeight: 48,
-  },
-  stopRecordingIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  stopRecordingText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  recordedAudioPreviewCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#38BDF8',
-  },
-  audioPreviewInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  audioIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  audioBoxIcon: {
-    fontSize: 22,
-  },
-  audioMetaColumn: {
-    flex: 1,
-  },
-  audioMetaTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  audioFileTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#F8FAFC',
-  },
-  audioFileSub: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  audioActionButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  playAudioButton: {
-    flex: 1.4,
-    backgroundColor: '#0284C7',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    minHeight: 48,
-  },
-  playAudioButtonActive: {
-    backgroundColor: '#F59E0B',
-  },
-  playAudioIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  playAudioText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  deleteAudioButton: {
-    flex: 1,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
     borderColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  recordingPulse: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    minHeight: 48,
   },
-  deleteAudioIcon: {
-    fontSize: 14,
+  redDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
     marginRight: 6,
   },
-  deleteAudioText: {
-    color: '#F87171',
+  recordingText: {
+    color: '#EF4444',
+    fontSize: 11,
     fontWeight: '700',
-    fontSize: 13,
   },
-  // Chips Styles
-  chipsContainer: {
+  voiceActionBtnStop: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  voiceActionTextStop: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  voiceStripReady: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  voiceReadyInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  voiceReadyLabel: {
+    fontSize: 11,
+    color: '#34D399',
+    fontWeight: '700',
+  },
+  voiceActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  voicePlayBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  voicePlayText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  voiceResetBtn: {
+    backgroundColor: '#27272A',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  voiceResetText: {
+    fontSize: 12,
+  },
+  // Issues Section
+  addCustomBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    borderRadius: 6,
+  },
+  addCustomBtnText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
-  chipButton: {
-    backgroundColor: '#0F172A',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#334155',
-    minHeight: 48,
-    justifyContent: 'center',
+  chip: {
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    borderRadius: 16,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
   },
-  chipButtonSelected: {
+  chipSelected: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderColor: '#EF4444',
   },
   chipText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#CBD5E1',
+    fontSize: 11,
+    color: '#A1A1AA',
+    fontWeight: '600',
   },
   chipTextSelected: {
-    color: '#FCA5A5',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
-  chipSubtext: {
-    fontSize: 10,
-    color: '#64748B',
+  // Feedback
+  feedback: {
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    alignItems: 'center',
   },
-  chipSubtextSelected: {
-    color: '#F87171',
-  },
-  feedbackBanner: {
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  feedbackBannerSuccess: {
+  feedbackSuccess: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
     borderColor: '#10B981',
   },
-  feedbackBannerError: {
+  feedbackError: {
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
     borderColor: '#EF4444',
   },
-  feedbackBannerText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
+  feedbackText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  feedbackTextSuccess: {
-    color: '#34D399',
-  },
-  feedbackTextError: {
-    color: '#F87171',
-  },
-  submitButton: {
+  // Submit Button
+  submitBtn: {
     backgroundColor: '#2563EB',
-    borderRadius: 14,
-    paddingVertical: 18,
+    borderRadius: 10,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    minHeight: 56,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 4,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
-    borderWidth: 1,
+  submitBtnDisabled: {
+    opacity: 0.5,
   },
-  submitButtonText: {
+  submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  // Photo Picker Modal
+  pickerOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  pickerOptionIcon: {
+    fontSize: 22,
+  },
+  pickerOptionTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pickerOptionSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  // Photo Inspection Modal
+  inspectPhotoCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 14,
+    padding: 14,
+    width: '90%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inspectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  inspectTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '800',
   },
-  cameraModalContainer: {
+  inspectSub: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  inspectImageWrapper: {
+    width: '100%',
+    height: 260,
+    backgroundColor: '#000000',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inspectImage: {
+    width: '100%',
+    height: '100%',
+  },
+  inspectDetailsBox: {
+    backgroundColor: '#121212',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  inspectGpsText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  inspectTimeText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  inspectWarningText: {
+    color: '#F59E0B',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  inspectActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  inspectCloseBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  inspectCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Tray Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  traySheet: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    borderTopWidth: 1,
+    borderColor: '#334155',
+  },
+  trayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  trayTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  trayCloseText: {
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: '700',
+    padding: 4,
+  },
+  traySubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 8,
+  },
+  trayInput: {
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    padding: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  trayAddBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  trayAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  traySiteItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
+  },
+  traySiteItemActive: {
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+    borderRadius: 8,
+  },
+  traySiteName: {
+    fontSize: 14,
+    color: '#CBD5E1',
+    fontWeight: '600',
+  },
+  traySiteNameActive: {
+    color: '#38BDF8',
+    fontWeight: '800',
+  },
+  traySiteLocation: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  trayCheckmark: {
+    color: '#38BDF8',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  emptySitesBox: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  emptySitesText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  // Modal Backdrop
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Camera Modal
+  cameraModal: {
     flex: 1,
     backgroundColor: '#000000',
   },
@@ -1406,34 +1741,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  cameraControlsContainer: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
+  cameraControls: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
-  closeCameraButton: {
+  closeCameraBtn: {
     padding: 12,
   },
   closeCameraText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
-  shutterButton: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+  shutterBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shutterButtonInner: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+  shutterBtnInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#FFFFFF',
   },
 });

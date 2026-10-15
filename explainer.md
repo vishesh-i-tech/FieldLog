@@ -1,173 +1,87 @@
-# 📘 FieldLog Technology & Architecture Explainer (`explainer.md`)
+# FieldLog — Technology & Architecture Explainer
 
-This living document explains every core technology, library, and architectural pattern used in FieldLog. It is continuously updated as new features, dependencies, and systems are introduced.
-
----
-
-## 1. Fastify (v5)
-
-* **What it does (Role & Purpose):**  
-  Fastify is the Node.js backend web framework that serves our REST API endpoints. It handles incoming HTTP requests from the mobile app and web dashboard, routes them to specific controllers, verifies security tokens, and returns JSON responses.
-
-* **How it works (Under the hood):**  
-  Unlike Express, Fastify uses a compiled JSON schema serialization engine (`fast-json-stringify`) and radix-tree route matching (`find-my-way`). This minimizes V8 engine overhead, resulting in up to 2x–4x higher throughput and minimal CPU latency under load.
-
-* **Simple Summary:**  
-  The fast, lightweight engine powering the server that receives reports and sends data back to the app.
+This document outlines the technologies, libraries, architectural decisions, and workflows implemented across the **FieldLog** project. It is continuously maintained as new features and capabilities are introduced.
 
 ---
 
-## 2. Neon Serverless Postgres
-
-* **What it does (Role & Purpose):**  
-  Neon is our cloud PostgreSQL relational database. It permanently stores all multi-tenant business data: organizations, users, work places (`sites`), daily logs, issues, media references, and edit history.
-
-* **How it works (Under the hood):**  
-  Neon separates storage from compute. It runs a custom Rust-based Page Server architecture where database storage is backed by cloud object storage, and compute nodes can scale to zero when idle and wake up on demand. It supports instant git-like branching (`main`, `dev`, `preview`), allowing isolated development without risking production data.
-
-* **Simple Summary:**  
-  The cloud database where all reports, accounts, and workplace records are safely stored.
+## 1. Expo & React Native (SDK 52)
+- **Role & Purpose**:
+  Provides the universal client application runtime supporting Web, Android, and iOS from a single TypeScript codebase.
+- **Under the Hood**:
+  Uses Expo Router for file-based navigation (analogous to Next.js App Router). Web execution runs via `@expo/metro-runtime` compiling React Native Web primitives into semantic DOM elements. Native execution targets Android and iOS with native view hierarchies.
+- **Summary**:
+  Single code base powering web browsers, mobile web, and native mobile APK/AAB builds.
 
 ---
 
-## 3. Drizzle ORM
-
-* **What it does (Role & Purpose):**  
-  Drizzle is a TypeScript-first Object-Relational Mapper (ORM). It allows us to define our database schema in code (`backend/src/db/schema.ts`) and query the database using type-safe TypeScript methods instead of raw SQL strings.
-
-* **How it works (Under the hood):**  
-  Drizzle has zero runtime dependencies and generates lightweight SQL queries with negligible overhead. During compilation, TypeScript inspects database queries against schema definitions so type mismatches or missing columns trigger build-time errors before code ever deploys.
-
-* **Simple Summary:**  
-  A code tool that translates TypeScript commands into safe SQL database queries.
+## 2. Fastify v5 (Backend API)
+- **Role & Purpose**:
+  High-performance, low-overhead HTTP/JSON REST backend server.
+- **Under the Hood**:
+  Fastify utilizes schema-based serialization with JSON Schema compilation and rapid lifecycle hooks (`onRequest`, `preHandler`, etc.). It powers multi-tenant authentication, record submissions, attendance statuses, image storage, and supervisor assignments.
+- **Summary**:
+  Blazing fast backend handling requests with sub-millisecond route resolution.
 
 ---
 
-## 4. postgres.js (`postgres`)
-
-* **What it does (Role & Purpose):**  
-  The underlying PostgreSQL client driver that maintains TCP network connections between the Fastify server and Neon Postgres.
-
-* **How it works (Under the hood):**  
-  Built with native tagged template literals, efficient binary communication with PostgreSQL wire protocol v3, and connection pooling support that works seamlessly through Neon's PgBouncer pooler (port 6543/5432).
-
-* **Simple Summary:**  
-  The pipeline establishing the actual network connection between the server and the database.
+## 3. Drizzle ORM & Database Layer
+- **Role & Purpose**:
+  Type-safe Object-Relational Mapping for relational database management (PostgreSQL / SQLite).
+- **Under the Hood**:
+  Drizzle provides zero-overhead SQL generation with compile-time type safety. Schemas in `backend/src/db/schema.ts` define organizations, users, sites (work places), site assignments, daily records, issue types, and media attachments with foreign key constraints.
+- **Summary**:
+  Type-safe database interactions with automatic migrations and zero runtime bloat.
 
 ---
 
-## 5. React Native & Expo (SDK 52)
-
-* **What it does (Role & Purpose):**  
-  The cross-platform framework used to build our mobile application for Android phones and laptop web browsers from a single TypeScript codebase.
-
-* **How it works (Under the hood):**  
-  React Native maps JSX declarative components (`<View>`, `<Text>`) to native Android platform widgets (like `android.widget.TextView` and `android.view.ViewGroup`). Expo provides a managed suite of native modules (camera, location, audio, permissions) that execute native Java/Kotlin code under the hood.
-
-* **Simple Summary:**  
-  The tool that lets us write one app that runs as a native Android app and as a web page on a laptop.
-
----
-
-## 6. React Native Web & Metro Bundler
-
-* **What it does (Role & Purpose):**  
-  Enables running the Expo mobile application directly in desktop web browsers (`npm run dev:web`) for rapid visual design and testing.
-
-* **How it works (Under the hood):**  
-  React Native Web maps React Native primitive components to standard HTML5 DOM elements (e.g., `<View>` becomes `<div>`, `<Text>` becomes `<span>`). Metro compiles and bundles JavaScript files while respecting monorepo workspaces via `metro.config.js`.
-
-* **Simple Summary:**  
-  The bridge that translates phone app components into regular website code so you can test on your laptop.
+## 4. Multi-Tenant Role & Work Place Architecture
+- **Role & Purpose**:
+  Enforces multi-tenancy and data isolation between Owners (Admins) and Field Officers (Supervisors).
+- **Under the Hood**:
+  - **Owner**: Full access to create/manage work places, invite field officers, assign officers to sites, review daily submissions, inspect geotagged photos, and listen to voice notes.
+  - **Field Officer**: Assigned strictly to specific work places. Login via phone number + 4-digit PIN. Can only submit reports and view workplaces explicitly assigned by the Owner.
+  - **Site Assignments**: Managed via `site_assignments` table linking `site_id` and `user_id`. Each site displays its assigned officer on the Owner dashboard with 1-click reassignment.
+- **Summary**:
+  Owner manages the entire organization; Field Officers only access their assigned work places.
 
 ---
 
-## 7. Expo Router (v4)
-
-* **What it does (Role & Purpose):**  
-  Provides file-based routing and navigation for the mobile application.
-
-* **How it works (Under the hood):**  
-  Similar to Next.js, every file inside the `mobile/app/` directory automatically becomes a navigation route (e.g. `app/record.tsx` routes to `/record`). It manages native Android back-stack transitions, deep links, and browser URL history.
-
-* **Simple Summary:**  
-  The traffic system that decides which screen opens when a user taps a button or link.
-
----
-
-## 8. Expo Audio (`expo-audio`) & HTML5 MediaRecorder
-
-* **What it does (Role & Purpose):**  
-  Powers the 60-second voice note recording and playback system.
-
-* **How it works (Under the hood):**  
-  - **On Android:** Uses Expo SDK 52's native `expo-audio` module to record mono AAC audio (`.m4a`) at 44.1 kHz, compressed to ~150 KB.
-  - **On Web:** Uses the browser's native `navigator.mediaDevices.getUserMedia` and `MediaRecorder` API (`audio/webm`), with a synthetic 520Hz PCM WAV fallback generator for development environments without a microphone.
-
-* **Simple Summary:**  
-  The voice recorder that lets supervisors speak their updates instead of typing long messages.
+## 5. Client-Side Geotagging & Watermarking (`photo.service.ts`)
+- **Role & Purpose**:
+  Ensures every photographic record has verifiable real-world coordinates without requiring external cloud EXIF services.
+- **Under the Hood**:
+  - **EXIF Extraction (`extractExifGps`)**: Directly parses raw JPEG APP1 binary markers (`0xFFE1`), searches for TIFF headers and GPS IFD blocks, and computes fractional Latitude and Longitude from rational number tags.
+  - **High-Accuracy Geolocation**: Uses `navigator.geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000 })` for live camera shots.
+  - **Canvas Watermarking**: Renders the image to an offscreen HTML5 `<canvas>` element and stamps timestamp (`YYYY-MM-DD HH:mm:ss`), coordinates (`Lat: XX.XXXXX, Long: YY.YYYYY`), and verified badges in real time.
+- **Summary**:
+  Extracts GPS directly from device images or live camera and burns tamper-evident stamps onto the image before upload.
 
 ---
 
-## 9. Expo Camera (`expo-camera`)
-
-* **What it does (Role & Purpose):**  
-  Enables supervisors to capture live photos directly inside the app while at the work location.
-
-* **How it works (Under the hood):**  
-  Interfaces with Android's `Camera2` hardware API to render a live hardware viewfinder (`CameraView`). Gallery pickers and photo library imports are deliberately excluded to enforce anti-fraud protection (preventing users from uploading old or downloaded images). On web dev preview, a dev mock photo stamped with GPS coordinates is generated.
-
-* **Simple Summary:**  
-  A secure camera inside the app that takes real-time photos and prevents uploading old photos from the gallery.
+## 6. Audio Note Engine (`MediaRecorder` & Expo AV)
+- **Role & Purpose**:
+  Allows field supervisors to record quick audio voice notes (up to 60 seconds) explaining site conditions or blockers.
+- **Under the Hood**:
+  On Web, uses browser `navigator.mediaDevices.getUserMedia({ audio: true })` and `MediaRecorder` encoding into Opus/WebM audio blobs. On Native, integrates `expo-av` audio recording. Uploads to backend storage with duration metadata and allows playback in Owner dashboard.
+- **Summary**:
+  One-tap voice recording giving field staff a hands-free reporting channel.
 
 ---
 
-## 10. Expo Location (`expo-location`) & Geotagging
-
-* **What it does (Role & Purpose):**  
-  Acquires GPS satellite coordinates, accuracy radius, and mock-location flags when taking photos.
-
-* **How it works (Under the hood):**  
-  Requests Android fine location permissions and communicates with device GPS / GNSS hardware providers. It inspects Android location metadata flags (`mocked: true/false`) to detect location spoofing apps.
-
-* **Simple Summary:**  
-  The GPS detector that stamps real latitude and longitude coordinates onto photos to prove supervisors were at the work place.
+## 7. Modal Sibling Backdrop Architecture (React Native Web Fix)
+- **Role & Purpose**:
+  Prevents modals from unexpectedly closing when users click or type inside `<TextInput>` fields on Web.
+- **Under the Hood**:
+  In React Native Web, wrapping a sheet inside `<TouchableOpacity style={styles.modalBackdrop} onPress={closeModal}>` causes DOM click/focus events inside `<TextInput>` to bubble up and trigger the parent `onPress`. The solution places `<TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeModal} />` as a **sibling behind** `<View style={styles.manageSheet}>`, completely eliminating event bubbling while retaining click-outside-to-dismiss behavior.
+- **Summary**:
+  Rock-solid modal interactions with zero focus/input dismissal bugs.
 
 ---
 
-## 11. Expo Secure Store (`expo-secure-store`)
-
-* **What it does (Role & Purpose):**  
-  Stores sensitive authentication tokens (JWT access tokens and refresh tokens) safely on the device.
-
-* **How it works (Under the hood):**  
-  On Android, it uses the Android Keystore system with AES encryption. Data is stored in `SharedPreferences`, encrypted with a key stored in the hardware keystore. On web dev, it falls back to `localStorage` / in-memory storage.
-
-* **Simple Summary:**  
-  An encrypted vault on the phone that remembers who is logged in so they do not have to enter their PIN every time.
-
----
-
-## 12. Zod
-
-* **What it does (Role & Purpose):**  
-  Performs runtime schema validation on all incoming API requests (payloads, query params, headers).
-
-* **How it works (Under the hood):**  
-  Parses raw HTTP JSON bodies against structured TypeScript schemas. If a field is missing, has an incorrect type, or violates UUID/date formats, it immediately rejects the request with a clean HTTP 400 Bad Request before database queries can run.
-
-* **Simple Summary:**  
-  A security inspector that checks all data entering the server to make sure it matches the expected format.
-
----
-
-## 13. EAS Build & EAS Update (Expo Application Services)
-
-* **What it does (Role & Purpose):**  
-  The cloud build and distribution pipeline for generating standalone Android `.apk` (for internal testing) and `.aab` (for Google Play Store).
-
-* **How it works (Under the hood):**  
-  Configured via `mobile/eas.json`. Cloud worker machines assemble native Gradle binaries, package assets, and produce downloadable installation files for team devices without requiring local Android Studio installations.
-
-* **Simple Summary:**  
-  The cloud factory that compiles the code into an installable Android APK file.
+## 8. Offline-First & Dev Storage Engine (`devStorage.ts`)
+- **Role & Purpose**:
+  Provides local asset persistence during development and offline staging before pushing to S3/Cloud Storage.
+- **Under the Hood**:
+  Accepts raw multipart binary or JSON `{ dataUrl }` base64 payloads at `PUT /api/v1/dev-storage/upload`, writes files into `./uploads/`, and serves them with accurate MIME types at `GET /api/v1/dev-storage/files/:key`.
+- **Summary**:
+  Self-contained media storage requiring zero external cloud dependencies during local testing.

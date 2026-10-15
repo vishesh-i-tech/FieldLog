@@ -4,6 +4,7 @@ import { eq, and, count } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { issueTypes } from '../db/schema.js';
 import { getIssueTypesForOrg } from '../services/issueTypes.service.js';
+import { verifyAccessToken } from '../services/auth.service.js';
 
 const createIssueTypeSchema = z.object({
   labelHi: z.string().min(1, 'Hindi label is required').max(255),
@@ -22,6 +23,19 @@ const updateIssueTypeSchema = z.object({
 });
 
 export const issueTypeRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
+  // Pre-handler hook to parse Bearer token if provided
+  fastify.addHook('preHandler', async (request, reply) => {
+    const authHeader = request.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      try {
+        request.user = verifyAccessToken(token);
+      } catch {
+        return reply.status(401).send({ error: 'Unauthorized: invalid or expired token' });
+      }
+    }
+  });
+
   // GET /api/v1/issue-types
   // Query param: ?activeOnly=true
   fastify.get('/api/v1/issue-types', async (request, reply) => {

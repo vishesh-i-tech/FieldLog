@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  TextInput,
+  Alert,
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -15,7 +17,6 @@ import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { useLanguage } from '../src/i18n';
 
 import {
-  initAuthSession,
   getCurrentUser,
   getAuthTokens,
   clearAuthSession,
@@ -26,16 +27,38 @@ import {
 interface SiteTodayItem {
   siteId: string;
   siteName: string;
+  locationText?: string;
+  assignedSupervisors?: {
+    id: string;
+    name: string;
+    phone: string;
+  }[];
   hasSubmitted: boolean;
   record: {
     id: string;
     status: 'full' | 'half' | 'stopped';
     capturedAt: string;
+    createdAt: string;
+    updatedAt?: string;
     missingPhoto: boolean;
     missingVoice: boolean;
     flags?: Record<string, any>;
-    createdAt: string;
+    submittedBy?: string;
+    submitterName?: string;
+    issues?: {
+      id: string;
+      labelHi: string;
+      labelEn: string;
+      icon?: string;
+    }[];
   } | null;
+}
+
+interface SupervisorItem {
+  id: string;
+  name: string;
+  phone: string;
+  isActive: boolean;
 }
 
 interface RecordDetail {
@@ -45,20 +68,24 @@ interface RecordDetail {
     status: 'full' | 'half' | 'stopped';
     capturedAt: string;
     receivedAt: string;
+    createdAt?: string;
+    updatedAt?: string;
     missingPhoto: boolean;
     missingVoice: boolean;
     submittedBy: string;
+    submitterName?: string;
   };
   issues: {
     id: string;
     labelHi: string;
     labelEn: string;
-    icon: string;
+    icon?: string;
   }[];
   media: {
     id: string;
     kind: 'photo' | 'audio';
     storageKey: string;
+    url?: string;
     mimeType: string;
     latitude: string | null;
     longitude: string | null;
@@ -73,16 +100,45 @@ export default function OwnerDashboard() {
   const { lang, changeLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [ownerName, setOwnerName] = useState('Business Owner');
-  const [companyName, setCompanyName] = useState('My Organization');
+  const [ownerName, setOwnerName] = useState('Owner');
   const [sitesData, setSitesData] = useState<SiteTodayItem[]>([]);
+  const [supervisorsList, setSupervisorsList] = useState<SupervisorItem[]>([]);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [recordDetail, setRecordDetail] = useState<RecordDetail | null>(null);
   const [selectedSiteName, setSelectedSiteName] = useState('');
   const [token, setToken] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [activeAudioObj, setActiveAudioObj] = useState<any>(null);
   const [acknowledgedRecords, setAcknowledgedRecords] = useState<Record<string, boolean>>({});
+  const [inspectingOwnerPhoto, setInspectingOwnerPhoto] = useState<any>(null);
+
+  // Management modals
+  const [addSiteModalVisible, setAddSiteModalVisible] = useState(false);
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteLocation, setNewSiteLocation] = useState('');
+  const [selectedSupervisorIdsForSite, setSelectedSupervisorIdsForSite] = useState<string[]>([]);
+  const [savingSite, setSavingSite] = useState(false);
+
+  const [addOfficerModalVisible, setAddOfficerModalVisible] = useState(false);
+  const [newOfficerName, setNewOfficerName] = useState('');
+  const [newOfficerPhone, setNewOfficerPhone] = useState('');
+  const [newOfficerPin, setNewOfficerPin] = useState('1234');
+  const [selectedSiteIdsForOfficer, setSelectedSiteIdsForOfficer] = useState<string[]>([]);
+  const [savingOfficer, setSavingOfficer] = useState(false);
+
+  // Quick Assign Field Officer to Site modal
+  const [assignSiteModalVisible, setAssignSiteModalVisible] = useState(false);
+  const [targetSiteForAssignment, setTargetSiteForAssignment] = useState<{ id: string; name: string } | null>(null);
+  const [initialSupervisorIdsForTargetSite, setInitialSupervisorIdsForTargetSite] = useState<string[]>([]);
+  const [selectedSupervisorIdsForTargetSite, setSelectedSupervisorIdsForTargetSite] = useState<string[]>([]);
+  const [savingSiteAssignment, setSavingSiteAssignment] = useState(false);
+
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remainder = Math.floor(secs % 60);
+    return `${mins.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
+  };
 
   // 1. Authenticate and load live data
   const loadDashboardData = async () => {
@@ -111,6 +167,18 @@ export default function OwnerDashboard() {
       setToken(accessToken);
       setOwnerName(user.name);
 
+      // Fetch sites list with assigned supervisors
+      const sitesRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      let sitesMap: Record<string, any> = {};
+      if (sitesRes.ok) {
+        const sitesList = await sitesRes.json();
+        for (const s of (sitesList.sites || [])) {
+          sitesMap[s.id] = s;
+        }
+      }
+
       // Fetch today's records across all sites
       const recordsRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/today`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -118,13 +186,69 @@ export default function OwnerDashboard() {
 
       if (recordsRes.ok) {
         const data = await recordsRes.json();
-        setSitesData(data.sites || []);
+        const merged = (data.sites || []).map((s: any) => ({
+          ...s,
+          locationText: sitesMap[s.siteId]?.locationText || '',
+          assignedSupervisors: sitesMap[s.siteId]?.assignedSupervisors || [],
+        }));
+        setSitesData(merged);
+      }
+
+      // Fetch supervisors list
+      const supervisorsRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/supervisors`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (supervisorsRes.ok) {
+        const supData = await supervisorsRes.json();
+        setSupervisorsList(supData.supervisors || []);
       }
     } catch (err) {
       console.error('Error fetching owner data:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleSaveSiteAssignment = async () => {
+    if (!targetSiteForAssignment) return;
+    setSavingSiteAssignment(true);
+    try {
+      const siteId = targetSiteForAssignment.id;
+      const addedIds = selectedSupervisorIdsForTargetSite.filter(
+        (id) => !initialSupervisorIdsForTargetSite.includes(id)
+      );
+      const removedIds = initialSupervisorIdsForTargetSite.filter(
+        (id) => !selectedSupervisorIdsForTargetSite.includes(id)
+      );
+
+      if (addedIds.length > 0) {
+        await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites/${siteId}/assign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ supervisorIds: addedIds }),
+        });
+      }
+
+      for (const remId of removedIds) {
+        await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites/${siteId}/assign/${remId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+
+      setAssignSiteModalVisible(false);
+      setTargetSiteForAssignment(null);
+      loadDashboardData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSavingSiteAssignment(false);
     }
   };
 
@@ -137,6 +261,14 @@ export default function OwnerDashboard() {
     setSelectedRecordId(recordId);
     setSelectedSiteName(siteName);
     setDetailLoading(true);
+    setIsPlayingAudio(false);
+    if (activeAudioObj) {
+      try {
+        activeAudioObj.pause();
+      } catch {}
+      setActiveAudioObj(null);
+    }
+
     try {
       const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records/${recordId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -152,6 +284,153 @@ export default function OwnerDashboard() {
     }
   };
 
+  const handleToggleVoicePlayback = (audioMedia?: any) => {
+    if (!audioMedia) return;
+
+    if (isPlayingAudio) {
+      if (activeAudioObj) {
+        try {
+          activeAudioObj.pause();
+        } catch {}
+        setActiveAudioObj(null);
+      }
+      setIsPlayingAudio(false);
+    } else {
+      setIsPlayingAudio(true);
+      if (Platform.OS === 'web' && typeof Audio !== 'undefined') {
+        const audioUrl = `${DEFAULT_API_BASE_URL}/uploads/${audioMedia.storageKey.replace(/^uploads\//, '')}`;
+        const audio = new Audio(audioUrl);
+        audio.onended = () => {
+          setIsPlayingAudio(false);
+          setActiveAudioObj(null);
+        };
+        audio.onerror = () => {
+          setTimeout(() => {
+            setIsPlayingAudio(false);
+            setActiveAudioObj(null);
+          }, (audioMedia.durationSeconds || 4) * 1000);
+        };
+        audio.play().catch(() => {
+          setTimeout(() => {
+            setIsPlayingAudio(false);
+            setActiveAudioObj(null);
+          }, (audioMedia.durationSeconds || 4) * 1000);
+        });
+        setActiveAudioObj(audio);
+      } else {
+        setTimeout(() => setIsPlayingAudio(false), (audioMedia.durationSeconds || 4) * 1000);
+      }
+    }
+  };
+
+  // Create new workplace
+  const handleSaveSite = async () => {
+    if (!newSiteName.trim()) {
+      Alert.alert(lang === 'hi' ? 'नाम आवश्यक है' : 'Name Required', 'Please enter workplace name');
+      return;
+    }
+    setSavingSite(true);
+    try {
+      const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newSiteName.trim(),
+          locationText: newSiteLocation.trim() || 'Site Area',
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create workplace');
+      }
+
+      const createdSiteData = await res.json();
+      const newSiteId = createdSiteData.site.id;
+
+      // Assign supervisors if any selected
+      if (selectedSupervisorIdsForSite.length > 0) {
+        await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites/${newSiteId}/assign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ supervisorIds: selectedSupervisorIdsForSite }),
+        });
+      }
+
+      setAddSiteModalVisible(false);
+      setNewSiteName('');
+      setNewSiteLocation('');
+      setSelectedSupervisorIdsForSite([]);
+      loadDashboardData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSavingSite(false);
+    }
+  };
+
+  // Create new field officer
+  const handleSaveOfficer = async () => {
+    if (!newOfficerName.trim() || !newOfficerPhone.trim()) {
+      Alert.alert('Required', 'Please enter field officer name and mobile number');
+      return;
+    }
+    setSavingOfficer(true);
+    try {
+      const res = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/supervisors`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newOfficerName.trim(),
+          phone: newOfficerPhone.trim(),
+          pin: newOfficerPin || '1234',
+          language: 'hi',
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create officer');
+      }
+
+      const created = await res.json();
+      const officerId = created.supervisor.id;
+
+      // Assign to selected work places
+      for (const sId of selectedSiteIdsForOfficer) {
+        try {
+          await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites/${sId}/assign`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ supervisorIds: [officerId] }),
+          });
+        } catch {}
+      }
+
+      setAddOfficerModalVisible(false);
+      setNewOfficerName('');
+      setNewOfficerPhone('');
+      setSelectedSiteIdsForOfficer([]);
+      loadDashboardData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSavingOfficer(false);
+    }
+  };
+
   // Metrics summary
   const totalSites = sitesData.length;
   const submittedCount = sitesData.filter((s) => s.hasSubmitted).length;
@@ -163,286 +442,571 @@ export default function OwnerDashboard() {
   const getStatusBadge = (status?: 'full' | 'half' | 'stopped') => {
     switch (status) {
       case 'full':
-        return { labelHi: 'पूरा दिन', labelEn: 'Full Day', color: '#10B981', bg: 'rgba(16,185,129,0.15)' };
+        return { label: lang === 'hi' ? 'पूरा दिन' : 'Full Day', color: '#10B981', bg: 'rgba(16,185,129,0.15)' };
       case 'half':
-        return { labelHi: 'आधा दिन', labelEn: 'Half Day', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' };
+        return { label: lang === 'hi' ? 'आधा दिन' : 'Half Day', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' };
       case 'stopped':
-        return { labelHi: 'काम बंद', labelEn: 'Stopped', color: '#EF4444', bg: 'rgba(239,68,68,0.15)' };
+        return { label: lang === 'hi' ? 'काम बंद' : 'Stopped', color: '#EF4444', bg: 'rgba(239,68,68,0.15)' };
       default:
-        return { labelHi: 'बाकी है', labelEn: 'Pending', color: '#94A3B8', bg: 'rgba(148,163,184,0.15)' };
+        return { label: lang === 'hi' ? 'बाकी है' : 'Pending', color: '#71717A', bg: 'rgba(113,113,122,0.15)' };
     }
   };
 
   const todayDisplayDate = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
-    weekday: 'long',
+    weekday: 'short',
     day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+    month: 'short',
   });
+
+  const audioItem = recordDetail?.media?.find((m) => m.kind === 'audio');
+  const photosList = recordDetail?.media?.filter((m) => m.kind === 'photo') || [];
 
   return (
     <View style={styles.container}>
-      {/* Top Navigation Bar */}
-      <View style={styles.topNav}>
-        <View>
-          <Text style={styles.companyName}>{companyName}</Text>
-          <Text style={styles.ownerGreeting}>
-            {lang === 'hi' ? `नमस्ते, ${ownerName} 👋` : `Hello, ${ownerName} 👋`}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          <View style={styles.langToggleContainer}>
+      <View style={styles.mainWrapper}>
+        {/* TOP BAR: Role Toggle (Admin / Field Officer) & Compact Language Toggle (EN / HN) */}
+        <View style={styles.topBar}>
+          {/* Role Switcher */}
+          <View style={styles.roleToggle}>
             <TouchableOpacity
-              style={[styles.langButton, lang === 'en' && styles.langButtonActive]}
+              style={[styles.roleBtn, styles.roleBtnActive]}
+              activeOpacity={1}
+            >
+              <Text style={[styles.roleBtnText, styles.roleBtnTextActive]}>
+                {t('admin')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.roleBtn}
+              onPress={async () => {
+                try {
+                  await loginSupervisor('9811111111', '1234');
+                  router.push('/record');
+                } catch {
+                  router.push('/record');
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.roleBtnText}>
+                {t('fieldOfficer')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Language Switcher: EN / HN */}
+          <View style={styles.langToggle}>
+            <TouchableOpacity
+              style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
               onPress={() => changeLanguage('en')}
             >
-              <Text style={[styles.langButtonText, lang === 'en' && styles.langButtonTextActive]}>
+              <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
                 EN
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.langButton, lang === 'hi' && styles.langButtonActive]}
+              style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
               onPress={() => changeLanguage('hi')}
             >
-              <Text style={[styles.langButtonText, lang === 'hi' && styles.langButtonTextActive]}>
-                HI
+              <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
+                HN
               </Text>
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.switchModeButton}
-            onPress={async () => {
-              try {
-                await loginSupervisor('9811111111', '1234');
-                router.push('/record');
-              } catch {
-                router.push('/login');
-              }
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.switchModeText}>📝 {t('switchToSupervisor')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.logoutNavButton}
-            onPress={async () => {
-              await clearAuthSession();
-              router.replace('/login');
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.logoutNavText}>🚪 {t('logout')}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Date & Refresh Banner */}
-        <View style={styles.dateBanner}>
-          <View>
-            <Text style={styles.dateHeading}>{t('dailyOverview')}</Text>
-            <Text style={styles.dateSubtext}>📅 {todayDisplayDate}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={() => {
-              setRefreshing(true);
-              loadDashboardData();
-            }}
-          >
-            <Text style={styles.refreshIcon}>{refreshing ? '⏳' : '🔄'}</Text>
-            <Text style={styles.refreshText}>{t('refresh')}</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* 4 Quick Counters (Metric Cards) */}
-        <View style={styles.metricsRow}>
-          <View style={[styles.metricCard, { borderColor: '#10B981' }]}>
-            <Text style={styles.metricEmoji}>🟢</Text>
-            <Text style={[styles.metricCount, { color: '#10B981' }]}>{fullDayCount}</Text>
-            <Text style={styles.metricLabel}>{t('statusFull')}</Text>
-            <Text style={styles.metricSubLabel}>{t('statusFullSub')}</Text>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Overview & Refresh Bar */}
+          <View style={styles.dateBanner}>
+            <View>
+              <Text style={styles.dateHeading}>{t('dailyOverview')}</Text>
+              <Text style={styles.dateSubtext}>📅 {todayDisplayDate}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={() => {
+                setRefreshing(true);
+                loadDashboardData();
+              }}
+            >
+              <Text style={styles.refreshIcon}>{refreshing ? '⏳' : '🔄'}</Text>
+              <Text style={styles.refreshText}>{t('refresh')}</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={[styles.metricCard, { borderColor: '#F59E0B' }]}>
-            <Text style={styles.metricEmoji}>🟡</Text>
-            <Text style={[styles.metricCount, { color: '#F59E0B' }]}>{halfDayCount}</Text>
-            <Text style={styles.metricLabel}>{t('statusHalf')}</Text>
-            <Text style={styles.metricSubLabel}>{t('statusHalfSub')}</Text>
+          {/* 4 Status Counters */}
+          <View style={styles.metricsRow}>
+            <View style={[styles.metricCard, { borderColor: '#10B981' }]}>
+              <Text style={styles.metricEmoji}>🟢</Text>
+              <Text style={[styles.metricCount, { color: '#10B981' }]}>{fullDayCount}</Text>
+              <Text style={styles.metricLabel}>{t('statusFull')}</Text>
+            </View>
+
+            <View style={[styles.metricCard, { borderColor: '#F59E0B' }]}>
+              <Text style={styles.metricEmoji}>🟡</Text>
+              <Text style={[styles.metricCount, { color: '#F59E0B' }]}>{halfDayCount}</Text>
+              <Text style={styles.metricLabel}>{t('statusHalf')}</Text>
+            </View>
+
+            <View style={[styles.metricCard, { borderColor: '#EF4444' }]}>
+              <Text style={styles.metricEmoji}>🔴</Text>
+              <Text style={[styles.metricCount, { color: '#EF4444' }]}>{stoppedCount}</Text>
+              <Text style={styles.metricLabel}>{t('statusStopped')}</Text>
+            </View>
+
+            <View style={[styles.metricCard, { borderColor: '#52525B' }]}>
+              <Text style={styles.metricEmoji}>⏳</Text>
+              <Text style={[styles.metricCount, { color: '#A1A1AA' }]}>{pendingCount}</Text>
+              <Text style={styles.metricLabel}>{t('statusPending')}</Text>
+            </View>
           </View>
 
-          <View style={[styles.metricCard, { borderColor: '#EF4444' }]}>
-            <Text style={styles.metricEmoji}>🔴</Text>
-            <Text style={[styles.metricCount, { color: '#EF4444' }]}>{stoppedCount}</Text>
-            <Text style={styles.metricLabel}>{t('statusStopped')}</Text>
-            <Text style={styles.metricSubLabel}>{t('statusStoppedSub')}</Text>
+          {/* Management Action Buttons (Add Work Place & Add Field Officer) */}
+          <View style={styles.managementBar}>
+            <TouchableOpacity
+              style={styles.manageBtn}
+              onPress={() => setAddSiteModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.manageBtnText}>+ {t('addWorkPlace')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.manageBtn, styles.manageBtnSecondary]}
+              onPress={() => setAddOfficerModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.manageBtnText}>+ {t('addFieldOfficer')}</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={[styles.metricCard, { borderColor: '#64748B' }]}>
-            <Text style={styles.metricEmoji}>⏳</Text>
-            <Text style={[styles.metricCount, { color: '#94A3B8' }]}>{pendingCount}</Text>
-            <Text style={styles.metricLabel}>{t('statusPending')}</Text>
-            <Text style={styles.metricSubLabel}>Pending</Text>
+          {/* Work Places List Heading */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>{t('siteSubmissions')}</Text>
+            <Text style={styles.sectionBadge}>
+              {submittedCount}/{totalSites} {t('reportsReceived')}
+            </Text>
           </View>
-        </View>
 
-        {/* Work Places List Heading */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>{t('siteSubmissions')}</Text>
-          <Text style={styles.sectionBadge}>
-            {submittedCount}/{totalSites} {t('reportsReceived')}
-          </Text>
-        </View>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#2563EB" />
+              <Text style={styles.loadingText}>{t('loadingSites')}</Text>
+            </View>
+          ) : (
+            sitesData.map((item, idx) => {
+              const badge = getStatusBadge(item.record?.status);
+              const isSeen = item.record ? !!acknowledgedRecords[item.record.id] : false;
+              const timeDate = item.record
+                ? new Date(item.record.updatedAt || item.record.capturedAt || item.record.createdAt)
+                : null;
+              const timeString = timeDate
+                ? timeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '';
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#3B82F6" />
-            <Text style={styles.loadingText}>{t('loadingSites')}</Text>
-          </View>
-        ) : (
-          sitesData.map((item, idx) => {
-            const badge = getStatusBadge(item.record?.status);
-            const badgeLabel = lang === 'hi' ? badge.labelHi : badge.labelEn;
-            const isSeen = item.record ? !!acknowledgedRecords[item.record.id] : false;
-
-            return (
-              <TouchableOpacity
-                key={item.siteId || idx}
-                style={[
-                  styles.siteCard,
-                  item.record ? styles.siteCardActive : styles.siteCardPending,
-                ]}
-                activeOpacity={item.record ? 0.75 : 1}
-                onPress={() => {
-                  if (item.record) {
-                    openRecordDetail(item.record.id, item.siteName);
-                  }
-                }}
-              >
-                <View style={styles.siteCardHeader}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.siteCardName}>{item.siteName}</Text>
-                    <Text style={styles.siteCardSub}>
-                      {item.record
-                        ? `⏱️ ${t('reportTime')}: ${new Date(item.record.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                        : t('noReportYet')}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.color }]}>
-                    <Text style={[styles.statusBadgeText, { color: badge.color }]}>
-                      {badgeLabel}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Badges row for photo, voice note, and GPS */}
-                {item.record && (
-                  <View style={styles.featurePillsRow}>
-                    {!item.record.missingPhoto ? (
-                      <View style={styles.featurePill}>
-                        <Text style={styles.featurePillText}>📸 {lang === 'hi' ? 'फोटो मौजूद' : 'Photo Attached'}</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.featurePill, styles.featurePillMissing]}>
-                        <Text style={styles.featurePillMissingText}>📷 {lang === 'hi' ? 'फोटो नहीं' : 'No Photo'}</Text>
-                      </View>
-                    )}
-
-                    {!item.record.missingVoice ? (
-                      <View style={[styles.featurePill, { backgroundColor: 'rgba(59,130,246,0.15)', borderColor: '#3B82F6' }]}>
-                        <Text style={[styles.featurePillText, { color: '#60A5FA' }]}>🎙️ {lang === 'hi' ? 'आवाज़ संदेश' : 'Voice Note'}</Text>
-                      </View>
-                    ) : null}
-
-                    <View style={[styles.featurePill, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: '#10B981' }]}>
-                      <Text style={[styles.featurePillText, { color: '#34D399' }]}>📍 {t('gpsVerified')}</Text>
+              return (
+                <TouchableOpacity
+                  key={item.siteId || idx}
+                  style={[
+                    styles.siteCard,
+                    item.record ? styles.siteCardActive : styles.siteCardPending,
+                  ]}
+                  activeOpacity={item.record ? 0.75 : 1}
+                  onPress={() => {
+                    if (item.record) {
+                      openRecordDetail(item.record.id, item.siteName);
+                    }
+                  }}
+                >
+                  <View style={styles.siteCardHeader}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.siteCardName}>{item.siteName}</Text>
+                      <Text style={styles.siteCardSub}>
+                        {item.record
+                          ? `⏱️ ${t('reportTime')}: ${timeString}${item.record.submitterName ? ` • ${item.record.submitterName}` : ''}`
+                          : t('noReportYet')}
+                      </Text>
                     </View>
 
-                    {isSeen && (
-                      <View style={[styles.featurePill, { backgroundColor: 'rgba(139,92,246,0.15)', borderColor: '#8B5CF6' }]}>
-                        <Text style={[styles.featurePillText, { color: '#A78BFA' }]}>✓ {t('markReviewed')}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: badge.bg, borderColor: badge.color }]}>
+                      <Text style={[styles.statusBadgeText, { color: badge.color }]}>
+                        {badge.label}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Assigned Field Officer for this site */}
+                  <View style={styles.cardOfficerRow}>
+                    <View style={styles.cardOfficerInfo}>
+                      <Text style={styles.cardOfficerLabel}>
+                        👷 {lang === 'hi' ? 'फील्ड ऑफिसर' : 'Field Officer'}:{' '}
+                        {item.assignedSupervisors && item.assignedSupervisors.length > 0 ? (
+                          <Text style={styles.cardOfficerName}>
+                            {item.assignedSupervisors.map((s) => `${s.name} (${s.phone})`).join(', ')}
+                          </Text>
+                        ) : (
+                          <Text style={styles.cardOfficerUnassigned}>
+                            {lang === 'hi' ? 'कोई नियुक्त नहीं ⚠️' : 'Unassigned ⚠️'}
+                          </Text>
+                        )}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.cardOfficerActionBtn,
+                        (!item.assignedSupervisors || item.assignedSupervisors.length === 0) &&
+                          styles.cardOfficerActionBtnAlert,
+                      ]}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setTargetSiteForAssignment({ id: item.siteId, name: item.siteName });
+                        const currentIds = item.assignedSupervisors?.map((s) => s.id) || [];
+                        setInitialSupervisorIdsForTargetSite(currentIds);
+                        setSelectedSupervisorIdsForTargetSite(currentIds);
+                        setAssignSiteModalVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.cardOfficerActionBtnText}>
+                        {item.assignedSupervisors && item.assignedSupervisors.length > 0
+                          ? (lang === 'hi' ? 'बदलें' : 'Change')
+                          : (lang === 'hi' ? '+ नियुक्त करें' : '+ Assign')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Issues preview on card */}
+                  {item.record?.issues && item.record.issues.length > 0 && (
+                    <View style={styles.cardIssuesContainer}>
+                      {item.record.issues.map((iss) => (
+                        <View key={iss.id} style={styles.cardIssueTag}>
+                          <Text style={styles.cardIssueText}>
+                            {iss.icon || '⚠️'} {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Badges row for photo, voice note, and GPS */}
+                  {item.record && (
+                    <View style={styles.featurePillsRow}>
+                      {!item.record.missingPhoto ? (
+                        <View style={styles.featurePill}>
+                          <Text style={styles.featurePillText}>📸 {lang === 'hi' ? 'फोटो' : 'Photo'}</Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.featurePill, styles.featurePillMissing]}>
+                          <Text style={styles.featurePillMissingText}>📷 {lang === 'hi' ? 'फोटो नहीं' : 'No Photo'}</Text>
+                        </View>
+                      )}
+
+                      {!item.record.missingVoice ? (
+                        <View style={[styles.featurePill, { backgroundColor: 'rgba(37,99,235,0.15)', borderColor: '#2563EB' }]}>
+                          <Text style={[styles.featurePillText, { color: '#60A5FA' }]}>🎙️ {lang === 'hi' ? 'आवाज' : 'Voice'}</Text>
+                        </View>
+                      ) : null}
+
+                      <View style={[styles.featurePill, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: '#10B981' }]}>
+                        <Text style={[styles.featurePillText, { color: '#34D399' }]}>📍 {t('gpsVerified')}</Text>
                       </View>
-                    )}
-                  </View>
-                )}
 
-                {item.record ? (
-                  <View style={styles.viewDetailRow}>
-                    <Text style={styles.viewDetailText}>
-                      {lang === 'hi' ? 'पूरा ब्योरा देखें (फोटो व आवाज़) →' : 'View Full Details (Photo & Voice) →'}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.pendingActionRow}>
-                    <Text style={styles.pendingActionText}>
-                      {lang === 'hi' ? 'सुपरवाइज़र को 5:00 PM पर ऑटो रिमाइंडर जाएगा' : 'Auto-reminder scheduled for supervisor at 5:00 PM'}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })
-        )}
+                      {isSeen && (
+                        <View style={[styles.featurePill, { backgroundColor: 'rgba(99,102,241,0.15)', borderColor: '#6366F1' }]}>
+                          <Text style={[styles.featurePillText, { color: '#A5B4FC' }]}>✓ {t('markReviewed')}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
-        {/* 7-Day History Preview Card */}
-        <View style={styles.historyCard}>
-          <Text style={styles.historyCardTitle}>
-            📊 {lang === 'hi' ? 'पिछले 7 दिनों का ट्रेंड (7-Day Consistency)' : '7-Day Activity & Attendance Trend'}
-          </Text>
-          <Text style={styles.historyCardSubtitle}>
-            {lang === 'hi'
-              ? 'मालिक सभी कार्यस्थलों की पिछले 7 दिनों की हाज़िरी एक नज़र में देख सकते हैं:'
-              : 'Overview of site submissions over the past 7 days across all locations:'}
-          </Text>
-          <View style={styles.historyGridRow}>
-            {(lang === 'hi'
-              ? ['गुरु', 'शुक्र', 'शनि', 'रवि', 'सोम', 'मंगल', 'बुध (आज)']
-              : ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed (Today)']
-            ).map((day, idx) => {
-              const colors = ['#10B981', '#10B981', '#F59E0B', '#EF4444', '#10B981', '#10B981', '#10B981'];
-              return (
-                <View key={idx} style={styles.historyDayCol}>
-                  <View style={[styles.historyDot, { backgroundColor: colors[idx] }]} />
-                  <Text style={styles.historyDayText}>{day}</Text>
-                </View>
+                  {item.record ? (
+                    <View style={styles.viewDetailRow}>
+                      <Text style={styles.viewDetailText}>
+                        {t('viewDetails')} →
+                      </Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
               );
-            })}
+            })
+          )}
+        </ScrollView>
+      </View>
+
+      {/* MODAL 1: ADD WORK PLACE */}
+      <Modal
+        visible={addSiteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddSiteModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setAddSiteModalVisible(false)}
+          />
+          <View style={styles.manageSheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>{t('addWorkPlace')}</Text>
+              <TouchableOpacity onPress={() => setAddSiteModalVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>{t('workPlaceName')}</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder="e.g. South Depot & Warehouse"
+              placeholderTextColor="#71717A"
+              value={newSiteName}
+              onChangeText={setNewSiteName}
+            />
+
+            <Text style={styles.inputLabel}>{t('location')}</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder="e.g. Sector 62, Noida"
+              placeholderTextColor="#71717A"
+              value={newSiteLocation}
+              onChangeText={setNewSiteLocation}
+            />
+
+            <Text style={styles.inputLabel}>{t('assignFieldOfficer')} (Multiple)</Text>
+            <ScrollView style={{ maxHeight: 120, marginBottom: 12 }}>
+              {supervisorsList.map((sup) => {
+                const isSelected = selectedSupervisorIdsForSite.includes(sup.id);
+                return (
+                  <TouchableOpacity
+                    key={sup.id}
+                    style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
+                    onPress={() => {
+                      setSelectedSupervisorIdsForSite((prev) =>
+                        isSelected ? prev.filter((id) => id !== sup.id) : [...prev, sup.id]
+                      );
+                    }}
+                  >
+                    <Text style={styles.officerSelectName}>👷 {sup.name} ({sup.phone})</Text>
+                    <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.saveActionBtn}
+              onPress={handleSaveSite}
+              disabled={savingSite}
+            >
+              {savingSite ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.saveActionText}>{t('save')}</Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
+      </Modal>
 
-        {/* Diagnostic Link */}
-        <TouchableOpacity
-          style={styles.diagnosticLink}
-          onPress={() => router.push('/')}
-        >
-          <Text style={styles.diagnosticLinkText}>
-            ⚙️ {lang === 'hi' ? 'सिस्टम हेल्थ व नेटवर्क सेटिंग्स खोलें' : 'Open System Health & Network Diagnostics'}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
+      {/* MODAL 2: ADD FIELD OFFICER */}
+      <Modal
+        visible={addOfficerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddOfficerModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setAddOfficerModalVisible(false)}
+          />
+          <View style={styles.manageSheet}>
+            <View style={styles.trayHeader}>
+              <Text style={styles.trayTitle}>{t('addFieldOfficer')}</Text>
+              <TouchableOpacity onPress={() => setAddOfficerModalVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-      {/* Detail Inspection Modal for Owner */}
+            <Text style={styles.inputLabel}>{t('officerName')}</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder="e.g. Ramesh Kumar"
+              placeholderTextColor="#71717A"
+              value={newOfficerName}
+              onChangeText={setNewOfficerName}
+            />
+
+            <Text style={styles.inputLabel}>{t('phoneLabel')} (Mobile)</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder="e.g. 9811111111"
+              placeholderTextColor="#71717A"
+              keyboardType="phone-pad"
+              value={newOfficerPhone}
+              onChangeText={setNewOfficerPhone}
+            />
+
+            <Text style={styles.inputLabel}>{t('pinLabel')} (4 Digits)</Text>
+            <TextInput
+              style={styles.trayInput}
+              placeholder="1234"
+              placeholderTextColor="#71717A"
+              keyboardType="numeric"
+              maxLength={4}
+              value={newOfficerPin}
+              onChangeText={setNewOfficerPin}
+            />
+
+            <Text style={styles.inputLabel}>{t('siteName')} (Access)</Text>
+            <ScrollView style={{ maxHeight: 120, marginBottom: 12 }}>
+              {sitesData.map((s) => {
+                const isSelected = selectedSiteIdsForOfficer.includes(s.siteId);
+                return (
+                  <TouchableOpacity
+                    key={s.siteId}
+                    style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
+                    onPress={() => {
+                      setSelectedSiteIdsForOfficer((prev) =>
+                        isSelected ? prev.filter((id) => id !== s.siteId) : [...prev, s.siteId]
+                      );
+                    }}
+                  >
+                    <Text style={styles.officerSelectName}>📍 {s.siteName}</Text>
+                    <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.saveActionBtn}
+              onPress={handleSaveOfficer}
+              disabled={savingOfficer}
+            >
+              {savingOfficer ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.saveActionText}>{t('save')}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 3: ASSIGN FIELD OFFICER TO WORKPLACE */}
+      <Modal
+        visible={assignSiteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAssignSiteModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setAssignSiteModalVisible(false)}
+          />
+          <View style={styles.manageSheet}>
+            <View style={styles.trayHeader}>
+              <View>
+                <Text style={styles.trayTitle}>{t('assignFieldOfficer')}</Text>
+                <Text style={styles.traySubtitle}>📍 {targetSiteForAssignment?.name}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAssignSiteModalVisible(false)}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>{lang === 'hi' ? 'फील्ड ऑफिसर चुनें:' : 'Select Field Officer(s):'}</Text>
+            <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
+              {supervisorsList.length === 0 ? (
+                <Text style={styles.noDataText}>
+                  {lang === 'hi' ? 'कोई फील्ड ऑफिसर नहीं है। पहले ऑफिसर जोड़ें।' : 'No officers found. Add a field officer first.'}
+                </Text>
+              ) : (
+                supervisorsList.map((sup) => {
+                  const isSelected = selectedSupervisorIdsForTargetSite.includes(sup.id);
+                  return (
+                    <TouchableOpacity
+                      key={sup.id}
+                      style={[styles.officerSelectItem, isSelected && styles.officerSelectItemActive]}
+                      onPress={() => {
+                        setSelectedSupervisorIdsForTargetSite((prev) =>
+                          isSelected ? prev.filter((id) => id !== sup.id) : [...prev, sup.id]
+                        );
+                      }}
+                    >
+                      <View>
+                        <Text style={styles.officerSelectName}>👷 {sup.name}</Text>
+                        <Text style={styles.officerSelectPhone}>📞 {sup.phone}</Text>
+                      </View>
+                      <Text style={styles.officerSelectCheck}>{isSelected ? '✓' : '○'}</Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.saveActionBtn}
+              onPress={handleSaveSiteAssignment}
+              disabled={savingSiteAssignment}
+            >
+              {savingSiteAssignment ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.saveActionText}>{t('save')}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DETAIL INSPECTION MODAL */}
       <Modal
         visible={!!selectedRecordId}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setSelectedRecordId(null)}
+        onRequestClose={() => {
+          setSelectedRecordId(null);
+          if (activeAudioObj) {
+            try { activeAudioObj.pause(); } catch {}
+            setActiveAudioObj(null);
+          }
+        }}
       >
         <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => {
+              setSelectedRecordId(null);
+              if (activeAudioObj) {
+                try { activeAudioObj.pause(); } catch {}
+                setActiveAudioObj(null);
+              }
+            }}
+          />
           <View style={styles.modalContainer}>
-            {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalSiteName}>{selectedSiteName}</Text>
                 <Text style={styles.modalDate}>
-                  {lang === 'hi' ? `दैनिक रिपोर्ट ब्योरा • ${todayDisplayDate}` : `Daily Record Inspection • ${todayDisplayDate}`}
+                  {t('recordDetailTitle')} • {todayDisplayDate}
+                  {recordDetail?.record?.submitterName ? ` • ${recordDetail.record.submitterName}` : ''}
                 </Text>
               </View>
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={() => setSelectedRecordId(null)}
+                onPress={() => {
+                  setSelectedRecordId(null);
+                  if (activeAudioObj) {
+                    try { activeAudioObj.pause(); } catch {}
+                    setActiveAudioObj(null);
+                  }
+                }}
               >
                 <Text style={styles.modalCloseText}>✕</Text>
               </TouchableOpacity>
@@ -450,16 +1014,14 @@ export default function OwnerDashboard() {
 
             {detailLoading ? (
               <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={styles.loadingText}>
-                  {lang === 'hi' ? 'विस्तृत रिपोर्ट लोड हो रही है...' : 'Loading detailed report...'}
-                </Text>
+                <ActivityIndicator size="large" color="#2563EB" />
+                <Text style={styles.loadingText}>{t('loadingSites')}</Text>
               </View>
             ) : recordDetail ? (
               <ScrollView contentContainerStyle={styles.modalBody} showsVerticalScrollIndicator={false}>
-                {/* 1. Status Section */}
+                {/* Status */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>1. {t('statusLabel')}</Text>
+                  <Text style={styles.modalSectionLabel}>{t('statusLabel')}</Text>
                   <View style={styles.modalStatusRow}>
                     <View
                       style={[
@@ -467,10 +1029,10 @@ export default function OwnerDashboard() {
                         {
                           backgroundColor:
                             recordDetail.record.status === 'full'
-                              ? 'rgba(16,185,129,0.2)'
+                              ? 'rgba(16,185,129,0.15)'
                               : recordDetail.record.status === 'half'
-                              ? 'rgba(245,158,11,0.2)'
-                              : 'rgba(239,68,68,0.2)',
+                              ? 'rgba(245,158,11,0.15)'
+                              : 'rgba(239,68,68,0.15)',
                           borderColor:
                             recordDetail.record.status === 'full'
                               ? '#10B981'
@@ -494,119 +1056,103 @@ export default function OwnerDashboard() {
                         ]}
                       >
                         {recordDetail.record.status === 'full'
-                          ? (lang === 'hi' ? '🟢 पूरा दिन काम हुआ (Full Day)' : '🟢 Full Day Work Completed')
+                          ? (lang === 'hi' ? '🟢 पूरा दिन' : '🟢 Full Day')
                           : recordDetail.record.status === 'half'
-                          ? (lang === 'hi' ? '🟡 आधा दिन काम हुआ (Half Day)' : '🟡 Half Day Work (Partial Shift)')
-                          : (lang === 'hi' ? '🔴 काम बंद रहा (Work Stopped)' : '🔴 Work Stopped / Halted')}
+                          ? (lang === 'hi' ? '🟡 आधा दिन' : '🟡 Half Day')
+                          : (lang === 'hi' ? '🔴 काम बंद' : '🔴 Work Stopped')}
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                {/* 2. Voice Note Player */}
+                {/* Voice Note */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>
-                    2. {lang === 'hi' ? 'सुपरवाइज़र का आवाज़ संदेश (Voice Note)' : 'Supervisor Voice Note'}
-                  </Text>
-                  <View style={styles.voicePlayerCard}>
-                    <TouchableOpacity
-                      style={styles.playButton}
-                      onPress={() => setIsPlayingAudio(!isPlayingAudio)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.playButtonIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
-                    </TouchableOpacity>
-                    <View style={styles.voiceTrackInfo}>
-                      <Text style={styles.voiceTrackTitle}>
-                        {isPlayingAudio
-                          ? (lang === 'hi' ? '🔊 आवाज़ बज रही है (Playing...)' : '🔊 Playing Audio...')
-                          : (lang === 'hi' ? '🎙️ आवाज़ संदेश सुनें' : '🎙️ Play Voice Note')}
-                      </Text>
-                      <Text style={styles.voiceTrackTime}>
-                        {lang === 'hi' ? 'अवधि: 0:42 सेकंड' : 'Duration: 0:42 seconds'}
-                      </Text>
-                      <View style={styles.waveformSimulator}>
-                        {[40, 70, 30, 90, 60, 100, 45, 80, 55, 95, 35, 75, 50, 85, 30, 60].map(
-                          (h, i) => (
-                            <View
-                              key={i}
-                              style={[
-                                styles.waveBar,
-                                {
-                                  height: (h / 100) * 24,
-                                  backgroundColor: isPlayingAudio ? '#3B82F6' : '#475569',
-                                },
-                              ]}
-                            />
-                          )
-                        )}
+                  <Text style={styles.modalSectionLabel}>{t('voiceSectionTitle')}</Text>
+                  {audioItem ? (
+                    <View style={styles.voicePlayerCard}>
+                      <TouchableOpacity
+                        style={styles.playButton}
+                        onPress={() => handleToggleVoicePlayback(audioItem)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.playButtonIcon}>{isPlayingAudio ? '⏸️' : '▶️'}</Text>
+                      </TouchableOpacity>
+                      <View style={styles.voiceTrackInfo}>
+                        <Text style={styles.voiceTrackTitle}>
+                          {isPlayingAudio ? t('pause') : t('playPreview')}
+                        </Text>
+                        <Text style={styles.voiceTrackTime}>
+                          {lang === 'hi' ? 'लंबाई: ' : 'Duration: '}{formatTime(audioItem.durationSeconds || 0)}
+                        </Text>
                       </View>
                     </View>
-                  </View>
-                </View>
-
-                {/* 3. Site Photos with GPS Stamp */}
-                <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>
-                    3. {lang === 'hi' ? 'कार्यस्थल की लाइव फोटो (Live Camera & GPS)' : 'Live Site Photos (In-App Camera & GPS)'}
-                  </Text>
-                  {recordDetail.media && recordDetail.media.filter((m) => m.kind === 'photo').length > 0 ? (
-                    recordDetail.media
-                      .filter((m) => m.kind === 'photo')
-                      .map((p, i) => (
-                        <View key={p.id || i} style={styles.photoContainer}>
-                          <View style={styles.photoStubBox}>
-                            <Text style={styles.photoIcon}>📸</Text>
-                            <Text style={styles.photoStubLabel}>
-                              {lang === 'hi' ? 'लाइव कैमरा फोटो (In-App Capture)' : 'Live Camera Photo (In-App Capture)'}
-                            </Text>
-                            <Text style={styles.photoTime}>
-                              {lang === 'hi' ? 'समय: ' : 'Time: '}{new Date(p.capturedAt).toLocaleTimeString()}
-                            </Text>
-                          </View>
-                          {/* GPS Watermark badge */}
-                          <View style={styles.watermarkBadge}>
-                            <Text style={styles.watermarkText}>
-                              📍 Lat: {p.latitude || '28.6280'}, Long: {p.longitude || '77.3780'}
-                            </Text>
-                            <Text style={styles.watermarkSubtext}>
-                              {lang === 'hi'
-                                ? `सटीकता: ±${p.accuracyM || '8.5'}m • गैलरी अपलोड निषेध (Anti-Fraud Pass)`
-                                : `Accuracy: ±${p.accuracyM || '8.5'}m • Gallery Upload Blocked (Anti-Fraud Pass)`}
-                            </Text>
-                          </View>
-                        </View>
-                      ))
                   ) : (
-                    <View style={styles.noDataBox}>
-                      <Text style={styles.noDataText}>
-                        {lang === 'hi' ? 'इस रिकॉर्ड में कोई फोटो संलग्न नहीं है।' : 'No photos attached in this record.'}
-                      </Text>
-                    </View>
+                    <Text style={styles.noDataText}>
+                      {lang === 'hi' ? 'कोई आवाज संदेश नहीं' : 'No voice note attached'}
+                    </Text>
                   )}
                 </View>
 
-                {/* 4. Issues Reported */}
+                {/* Photos */}
                 <View style={styles.modalCard}>
-                  <Text style={styles.modalSectionLabel}>4. {t('issuesReported')}</Text>
+                  <View style={styles.sectionHeaderRow}>
+                    <Text style={styles.modalSectionLabel}>{t('photosSectionTitle')}</Text>
+                    <Text style={styles.sectionBadge}>{photosList.length} {lang === 'hi' ? 'फोटो' : 'Photos'}</Text>
+                  </View>
+                  {photosList.length > 0 ? (
+                    <View style={styles.ownerPhotoGrid}>
+                      {photosList.map((p, i) => {
+                        const imgUrl = p.url || `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`;
+                        return (
+                          <TouchableOpacity
+                            key={p.id || i}
+                            style={styles.ownerPhotoBox}
+                            onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
+                            activeOpacity={0.8}
+                          >
+                            <Image
+                              source={{ uri: imgUrl }}
+                              style={styles.ownerPhotoThumb}
+                              resizeMode="cover"
+                            />
+                            <View style={styles.watermarkBadge}>
+                              <Text style={styles.watermarkText} numberOfLines={1}>
+                                📍 {p.latitude ? `${Number(p.latitude).toFixed(3)}, ${Number(p.longitude).toFixed(3)}` : 'GPS Tagged'}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>
+                      {lang === 'hi' ? 'कोई फोटो नहीं है' : 'No photos attached'}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Issues Reported */}
+                <View style={styles.modalCard}>
+                  <Text style={styles.modalSectionLabel}>{t('issuesReported')}</Text>
                   {recordDetail.issues && recordDetail.issues.length > 0 ? (
                     <View style={styles.issuesRow}>
                       {recordDetail.issues.map((iss) => (
                         <View key={iss.id} style={styles.issueTag}>
                           <Text style={styles.issueTagText}>
-                            {iss.icon || '⚠️'} {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
+                            {iss.icon ? `${iss.icon} ` : '⚠️ '}
+                            {lang === 'hi' ? iss.labelHi : (iss.labelEn || iss.labelHi)}
                           </Text>
                         </View>
                       ))}
                     </View>
                   ) : (
                     <Text style={styles.noIssuesText}>
-                      ✅ {lang === 'hi' ? 'कोई समस्या दर्ज नहीं हुई (All Clear)' : 'No Issues Reported (All Clear)'}
+                      ✓ {lang === 'hi' ? 'कोई समस्या नहीं' : 'No issues reported'}
                     </Text>
                   )}
                 </View>
 
-                {/* Acknowledge Button */}
+                {/* Reviewed Button */}
                 <TouchableOpacity
                   style={[
                     styles.seenButton,
@@ -618,17 +1164,78 @@ export default function OwnerDashboard() {
                       [selectedRecordId!]: true,
                     }));
                     setSelectedRecordId(null);
+                    if (activeAudioObj) {
+                      try { activeAudioObj.pause(); } catch {}
+                      setActiveAudioObj(null);
+                    }
                   }}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.seenButtonText}>
                     {acknowledgedRecords[selectedRecordId!]
-                      ? `✓ ${lang === 'hi' ? 'देखा गया (Acknowledged)' : 'Report Acknowledged'}`
-                      : `✓ ${lang === 'hi' ? 'मालिक द्वारा स्वीकृत करें (Mark as Seen)' : 'Acknowledge & Mark as Reviewed'}`}
+                      ? `✓ ${t('markReviewed')}`
+                      : `✓ ${t('acknowledge')}`}
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
             ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      {/* OWNER FULL PHOTO INSPECTION MODAL */}
+      <Modal
+        visible={!!inspectingOwnerPhoto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInspectingOwnerPhoto(null)}
+      >
+        <View style={[styles.modalBackdrop, { justifyContent: 'center' }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setInspectingOwnerPhoto(null)}
+          />
+          <View style={styles.inspectPhotoCard}>
+            <View style={styles.inspectHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inspectTitle}>{lang === 'hi' ? 'साइट फोटो' : 'Site Photo'}</Text>
+                <Text style={styles.inspectSub}>
+                  ✓ {lang === 'hi' ? 'जीपीएस सत्यापित' : 'GPS Verified'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setInspectingOwnerPhoto(null)} style={{ padding: 4 }}>
+                <Text style={styles.trayCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {inspectingOwnerPhoto && (
+              <View style={styles.inspectImageWrapper}>
+                <Image
+                  source={{ uri: inspectingOwnerPhoto.displayUrl }}
+                  style={styles.inspectImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+
+            <View style={styles.inspectDetailsBox}>
+              <Text style={styles.inspectGpsText}>
+                📍 Lat: {inspectingOwnerPhoto?.latitude ? Number(inspectingOwnerPhoto.latitude).toFixed(5) : '28.53550'}° N, Long: {inspectingOwnerPhoto?.longitude ? Number(inspectingOwnerPhoto.longitude).toFixed(5) : '77.39100'}° E
+              </Text>
+              <Text style={styles.inspectTimeText}>
+                📅 {inspectingOwnerPhoto?.capturedAt ? new Date(inspectingOwnerPhoto.capturedAt).toLocaleString() : ''}
+              </Text>
+            </View>
+
+            <View style={styles.inspectActionsRow}>
+              <TouchableOpacity
+                style={styles.inspectCloseBtn}
+                onPress={() => setInspectingOwnerPhoto(null)}
+              >
+                <Text style={styles.inspectCloseBtnText}>{t('close')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -639,172 +1246,181 @@ export default function OwnerDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0F19',
+    backgroundColor: '#121212',
   },
-  topNav: {
+  mainWrapper: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+    backgroundColor: '#121212',
+  },
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
-    backgroundColor: '#0F172A',
+    borderBottomColor: '#2C2C2E',
+    backgroundColor: '#1E1E1E',
   },
-  companyName: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  ownerGreeting: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginTop: 2,
-  },
-  langToggleContainer: {
+  roleToggle: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
+    backgroundColor: '#121212',
+    borderRadius: 8,
     padding: 2,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#2C2C2E',
   },
-  langButton: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 12,
+  roleBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
-  langButtonActive: {
+  roleBtnActive: {
     backgroundColor: '#2563EB',
   },
-  langButtonText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  langButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  switchModeButton: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  switchModeText: {
-    color: '#60A5FA',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  logoutNavButton: {
-    backgroundColor: 'rgba(239,68,68,0.15)',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  logoutNavText: {
-    color: '#F87171',
+  roleBtnText: {
+    color: '#A1A1AA',
     fontSize: 12,
     fontWeight: '700',
   },
+  roleBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  langToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#121212',
+    borderRadius: 8,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  langBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  langBtnActive: {
+    backgroundColor: '#2563EB',
+  },
+  langBtnText: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  langBtnTextActive: {
+    color: '#FFFFFF',
+  },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: 12,
+    paddingBottom: 30,
   },
   dateBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
   dateHeading: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#F1F5F9',
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   dateSubtext: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94A3B8',
     marginTop: 2,
   },
   refreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: '#1E1E1E',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#2C2C2E',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    gap: 4,
   },
   refreshIcon: {
-    marginRight: 4,
-    fontSize: 14,
+    fontSize: 12,
   },
   refreshText: {
     color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   metricsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    gap: 8,
+    gap: 6,
+    marginBottom: 10,
   },
   metricCard: {
     flex: 1,
-    backgroundColor: '#131C2E',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     alignItems: 'center',
     borderWidth: 1,
   },
   metricEmoji: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 2,
   },
   metricCount: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '800',
   },
   metricLabel: {
+    fontSize: 9,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  // Management Buttons Bar
+  managementBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  manageBtn: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageBtnSecondary: {
+    backgroundColor: '#1E1E1E',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+  },
+  manageBtnText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
-    color: '#E2E8F0',
-    marginTop: 2,
-  },
-  metricSubLabel: {
-    fontSize: 10,
-    color: '#64748B',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   sectionBadge: {
-    fontSize: 12,
-    color: '#34D399',
-    fontWeight: '600',
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    fontSize: 11,
+    color: '#38BDF8',
+    fontWeight: '700',
   },
   loadingContainer: {
     padding: 30,
@@ -812,364 +1428,501 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: '#94A3B8',
-    marginTop: 10,
-    fontSize: 13,
+    marginTop: 8,
+    fontSize: 12,
   },
   siteCard: {
-    backgroundColor: '#131C2E',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
     borderWidth: 1,
+    borderColor: '#2C2C2E',
   },
   siteCardActive: {
-    borderColor: '#1E293B',
+    borderColor: '#334155',
   },
   siteCardPending: {
-    borderColor: '#334155',
-    backgroundColor: '#0F1626',
-    borderStyle: 'dashed',
+    opacity: 0.85,
   },
   siteCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   siteCardName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#FFFFFF',
   },
   siteCardSub: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
-    marginTop: 3,
+    marginTop: 2,
   },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
     borderWidth: 1,
   },
   statusBadgeText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
+  },
+  cardIssuesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 6,
+  },
+  cardIssueTag: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  cardIssueText: {
+    color: '#F87171',
+    fontSize: 10,
+    fontWeight: '600',
   },
   featurePillsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
-    marginTop: 12,
+    marginTop: 8,
   },
   featurePill: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#10B981',
+    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
   },
   featurePillText: {
-    fontSize: 11,
-    color: '#E2E8F0',
-    fontWeight: '600',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#34D399',
   },
   featurePillMissing: {
-    borderColor: '#475569',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: '#EF4444',
   },
   featurePillMissingText: {
-    fontSize: 11,
-    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#F87171',
   },
   viewDetailRow: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
+    marginTop: 6,
     alignItems: 'flex-end',
   },
   viewDetailText: {
-    color: '#60A5FA',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  pendingActionRow: {
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-  },
-  pendingActionText: {
-    color: '#64748B',
+    color: '#38BDF8',
     fontSize: 11,
-    fontStyle: 'italic',
-  },
-  historyCard: {
-    backgroundColor: '#131C2E',
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 10,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  historyCardTitle: {
-    fontSize: 15,
     fontWeight: '700',
-    color: '#F8FAFC',
   },
-  historyCardSubtitle: {
+  cardOfficerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#18181B',
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  cardOfficerInfo: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  cardOfficerLabel: {
     fontSize: 12,
     color: '#94A3B8',
-    marginTop: 4,
-    marginBottom: 14,
+    fontWeight: '700',
   },
-  historyGridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  historyDayCol: {
-    alignItems: 'center',
-  },
-  historyDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    marginBottom: 6,
-  },
-  historyDayText: {
-    fontSize: 10,
-    color: '#94A3B8',
+  cardOfficerName: {
+    color: '#F8FAFC',
     fontWeight: '600',
   },
-  diagnosticLink: {
-    padding: 14,
-    alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: '#1E293B',
+  cardOfficerUnassigned: {
+    color: '#F59E0B',
+    fontWeight: '700',
+  },
+  cardOfficerActionBtn: {
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#2563EB',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
   },
-  diagnosticLinkText: {
+  cardOfficerActionBtnAlert: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    borderColor: '#F59E0B',
+  },
+  cardOfficerActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  officerSelectPhone: {
     color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    marginTop: 2,
   },
-
-  // Modal Styles
+  // Modal Backdrop & Sheets
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
-  modalContainer: {
-    backgroundColor: '#0F172A',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
+  manageSheet: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    borderTopWidth: 1,
+    borderColor: '#334155',
+  },
+  trayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  trayTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  trayCloseText: {
+    fontSize: 15,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  inputLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '700',
+    marginBottom: 4,
+    marginTop: 6,
+  },
+  trayInput: {
+    backgroundColor: '#121212',
     borderWidth: 1,
     borderColor: '#334155',
+    borderRadius: 8,
+    padding: 8,
+    color: '#FFFFFF',
+    fontSize: 13,
+  },
+  officerSelectItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: '#121212',
+    borderRadius: 6,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  officerSelectItemActive: {
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+  },
+  officerSelectName: {
+    color: '#E2E8F0',
+    fontSize: 12,
+  },
+  officerSelectCheck: {
+    color: '#38BDF8',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  saveActionBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  saveActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  // Record Detail Modal
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+    marginTop: 50,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 18,
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#2C2C2E',
   },
   modalSiteName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: '#FFFFFF',
   },
   modalDate: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     marginTop: 2,
   },
   modalCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#1E293B',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 8,
   },
   modalCloseText: {
-    color: '#F8FAFC',
     fontSize: 16,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   modalLoading: {
     padding: 40,
     alignItems: 'center',
   },
   modalBody: {
-    padding: 18,
-    paddingBottom: 40,
+    padding: 16,
+    gap: 12,
   },
   modalCard: {
-    backgroundColor: '#131C2E',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 14,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 10,
+    padding: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#2C2C2E',
   },
   modalSectionLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginBottom: 8,
   },
   modalStatusRow: {
-    alignItems: 'flex-start',
+    flexDirection: 'row',
   },
   bigStatusPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1.5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
   },
   bigStatusText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
   },
   voicePlayerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0B0F19',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#1E293B',
+    gap: 12,
   },
   playButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#3B82F6',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
   playButtonIcon: {
-    fontSize: 18,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
   voiceTrackInfo: {
     flex: 1,
   },
   voiceTrackTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#FFFFFF',
   },
   voiceTrackTime: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
-    marginTop: 2,
-    marginBottom: 6,
-  },
-  waveformSimulator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    height: 24,
-  },
-  waveBar: {
-    width: 4,
-    borderRadius: 2,
   },
   photoContainer: {
-    borderRadius: 10,
+    marginBottom: 8,
+    borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#0B0F19',
+    backgroundColor: '#121212',
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#2C2C2E',
   },
   photoStubBox: {
-    height: 160,
-    backgroundColor: '#1E293B',
+    padding: 16,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   photoIcon: {
-    fontSize: 36,
-    marginBottom: 6,
+    fontSize: 24,
+    marginBottom: 4,
   },
   photoStubLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#E2E8F0',
   },
   photoTime: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#94A3B8',
-    marginTop: 4,
   },
   watermarkBadge: {
-    backgroundColor: 'rgba(15,23,42,0.95)',
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
   },
   watermarkText: {
+    fontSize: 9,
     color: '#34D399',
-    fontSize: 12,
+    textAlign: 'center',
     fontWeight: '700',
   },
-  watermarkSubtext: {
-    color: '#94A3B8',
-    fontSize: 10,
-    marginTop: 2,
-  },
-  noDataBox: {
-    padding: 14,
-    alignItems: 'center',
-  },
   noDataText: {
-    color: '#64748B',
     fontSize: 12,
+    color: '#71717A',
+    fontStyle: 'italic',
   },
   issuesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   issueTag: {
-    backgroundColor: 'rgba(239,68,68,0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: '#EF4444',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
   },
   issueTagText: {
     color: '#F87171',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   noIssuesText: {
-    color: '#34D399',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '700',
   },
   seenButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 14,
-    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
   },
   seenButtonActive: {
     backgroundColor: '#10B981',
   },
   seenButtonText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  ownerPhotoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  ownerPhotoBox: {
+    width: 90,
+    height: 90,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  ownerPhotoThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  inspectPhotoCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 14,
+    padding: 14,
+    width: '90%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inspectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  inspectTitle: {
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
+  },
+  inspectSub: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  inspectImageWrapper: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#000000',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  inspectImage: {
+    width: '100%',
+    height: '100%',
+  },
+  inspectDetailsBox: {
+    backgroundColor: '#121212',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  inspectGpsText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  inspectTimeText: {
+    color: '#94A3B8',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  inspectActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  inspectCloseBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  inspectCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

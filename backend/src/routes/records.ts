@@ -10,6 +10,7 @@ import {
   sites,
   siteAssignments,
   issueTypes,
+  users,
 } from '../db/schema.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -45,6 +46,56 @@ const submitRecordSchema = z.object({
   photos: z.array(photoSubmissionSchema).max(6, 'Maximum 6 photos per record').default([]),
   audio: audioSubmissionSchema.optional(),
 });
+
+async function resolveIssueTypeIds(db: any, orgId: string, inputIds: string[]): Promise<string[]> {
+  if (!inputIds || inputIds.length === 0) return [];
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const orgIssues = await db
+    .select()
+    .from(issueTypes)
+    .where(eq(issueTypes.organizationId, orgId));
+
+  const resolved = new Set<string>();
+  for (const rawId of inputIds) {
+    if (uuidRegex.test(rawId)) {
+      const match = orgIssues.find((oi: any) => oi.id === rawId);
+      if (match) resolved.add(match.id);
+    } else {
+      const num = parseInt(rawId, 10);
+      if (!isNaN(num) && num >= 1 && num <= orgIssues.length) {
+        resolved.add(orgIssues[num - 1].id);
+      } else {
+        const match = orgIssues.find((oi: any) =>
+          oi.labelEn.toLowerCase().includes(rawId.toLowerCase()) ||
+          oi.labelHi.includes(rawId)
+        );
+        if (match) {
+          resolved.add(match.id);
+        } else if (typeof rawId === 'string' && rawId.trim().length > 0) {
+          // Dynamic custom issue inserted by field officer
+          const trimmed = rawId.trim();
+          const [created] = await db
+            .insert(issueTypes)
+            .values({
+              organizationId: orgId,
+              labelHi: trimmed,
+              labelEn: trimmed,
+              icon: '⚠️',
+              sortOrder: orgIssues.length + 1,
+              isActive: true,
+              isDefault: false,
+            })
+            .returning();
+          if (created) {
+            resolved.add(created.id);
+            orgIssues.push(created);
+          }
+        }
+      }
+    }
+  }
+  return Array.from(resolved);
+}
 
 export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   fastify.addHook('preHandler', authenticate);
@@ -151,6 +202,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
           status,
           capturedAt: capturedAtDate,
           receivedAt: now,
+          submittedBy: user.userId,
           flags: { ...(existingDayRecord.flags as object || {}), ...flags },
           missingPhoto: photos.length === 0,
           missingVoice,
@@ -161,18 +213,18 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
       // 3. Sync issues (clear and re-link current active issues)
       await db.delete(recordIssues).where(eq(recordIssues.recordId, existingDayRecord.id));
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const validIssueIds = issueTypeIds.filter((id) => uuidRegex.test(id));
-      if (validIssueIds.length > 0) {
-        const issueRows = validIssueIds.map((issueTypeId) => ({
+      const resolvedIssueIds = await resolveIssueTypeIds(db, user.organizationId, issueTypeIds);
+      if (resolvedIssueIds.length > 0) {
+        const issueRows = resolvedIssueIds.map((issueTypeId) => ({
           recordId: existingDayRecord.id,
           issueTypeId,
         }));
         await db.insert(recordIssues).values(issueRows);
       }
 
-      // 4. Attach any newly submitted photos
+      // 4. Attach any newly submitted photos (replace previous on new upload)
       if (photos.length > 0) {
+        await db.delete(media).where(and(eq(media.recordId, existingDayRecord.id), eq(media.kind, 'photo')));
         const photoRows = photos.map((p) => ({
           recordId: existingDayRecord.id,
           kind: 'photo' as const,
@@ -188,8 +240,9 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         await db.insert(media).values(photoRows);
       }
 
-      // 5. Attach audio if provided
+      // 5. Attach audio if provided (replaces previous audio)
       if (audio) {
+        await db.delete(media).where(and(eq(media.recordId, existingDayRecord.id), eq(media.kind, 'audio')));
         await db.insert(media).values({
           recordId: existingDayRecord.id,
           kind: 'audio',
@@ -227,10 +280,9 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       .returning();
 
     // Insert issue chips
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const validIssueIds = issueTypeIds.filter((id) => uuidRegex.test(id));
-    if (validIssueIds.length > 0) {
-      const issueRows = validIssueIds.map((issueTypeId) => ({
+    const resolvedIssueIds = await resolveIssueTypeIds(db, user.organizationId, issueTypeIds);
+    if (resolvedIssueIds.length > 0) {
+      const issueRows = resolvedIssueIds.map((issueTypeId) => ({
         recordId: newRecord.id,
         issueTypeId,
       }));
@@ -305,19 +357,67 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
     const siteIds = targetSites.map((s) => s.id);
     let todayRecords: any[] = [];
+    let recordIssuesMap: Record<string, any[]> = {};
+
     if (siteIds.length > 0) {
       todayRecords = await db
-        .select()
+        .select({
+          id: dailyRecords.id,
+          siteId: dailyRecords.siteId,
+          status: dailyRecords.status,
+          capturedAt: dailyRecords.capturedAt,
+          createdAt: dailyRecords.createdAt,
+          updatedAt: dailyRecords.updatedAt,
+          missingPhoto: dailyRecords.missingPhoto,
+          missingVoice: dailyRecords.missingVoice,
+          flags: dailyRecords.flags,
+          submittedBy: dailyRecords.submittedBy,
+          submitterName: users.name,
+        })
         .from(dailyRecords)
+        .leftJoin(users, eq(dailyRecords.submittedBy, users.id))
         .where(
           and(
             inArray(dailyRecords.siteId, siteIds),
             eq(dailyRecords.recordDate, todayStr)
           )
         );
+
+      const recordIds = todayRecords.map((r) => r.id);
+      if (recordIds.length > 0) {
+        const issuesRows = await db
+          .select({
+            recordId: recordIssues.recordId,
+            id: issueTypes.id,
+            labelHi: issueTypes.labelHi,
+            labelEn: issueTypes.labelEn,
+            icon: issueTypes.icon,
+          })
+          .from(recordIssues)
+          .innerJoin(issueTypes, eq(recordIssues.issueTypeId, issueTypes.id))
+          .where(inArray(recordIssues.recordId, recordIds));
+
+        for (const row of issuesRows) {
+          if (!recordIssuesMap[row.recordId]) recordIssuesMap[row.recordId] = [];
+          recordIssuesMap[row.recordId].push({
+            id: row.id,
+            labelHi: row.labelHi,
+            labelEn: row.labelEn,
+            icon: row.icon,
+          });
+        }
+      }
     }
 
-    const recordsBySiteId = new Map(todayRecords.map((r) => [r.siteId, r]));
+    const recordsBySiteId = new Map(
+      todayRecords.map((r) => [
+        r.siteId,
+        {
+          ...r,
+          issues: recordIssuesMap[r.id] || [],
+        },
+      ])
+    );
 
     const summary = targetSites.map((site) => ({
       siteId: site.id,
@@ -341,8 +441,22 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const { id } = request.params as { id: string };
 
     const [record] = await db
-      .select()
+      .select({
+        id: dailyRecords.id,
+        siteId: dailyRecords.siteId,
+        status: dailyRecords.status,
+        capturedAt: dailyRecords.capturedAt,
+        receivedAt: dailyRecords.receivedAt,
+        createdAt: dailyRecords.createdAt,
+        updatedAt: dailyRecords.updatedAt,
+        missingPhoto: dailyRecords.missingPhoto,
+        missingVoice: dailyRecords.missingVoice,
+        flags: dailyRecords.flags,
+        submittedBy: dailyRecords.submittedBy,
+        submitterName: users.name,
+      })
       .from(dailyRecords)
+      .leftJoin(users, eq(dailyRecords.submittedBy, users.id))
       .where(and(eq(dailyRecords.id, id), eq(dailyRecords.organizationId, user.organizationId)));
 
     if (!record) {
@@ -367,10 +481,21 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       .from(media)
       .where(eq(media.recordId, record.id));
 
+    const mediaWithUrls = mediaList.map((m) => {
+      let downloadUrl = m.storageKey;
+      if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://') && !downloadUrl.startsWith('data:')) {
+        downloadUrl = `http://localhost:4000/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
+      }
+      return {
+        ...m,
+        url: downloadUrl,
+      };
+    });
+
     return reply.status(200).send({
       record,
       issues: issuesList,
-      media: mediaList,
+      media: mediaWithUrls,
     });
   });
 };
