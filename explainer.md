@@ -146,3 +146,16 @@ This document outlines the technologies, libraries, architectural decisions, and
   - **In-App Modal Validation**: Replaces native browser dialogs with React Native `<Modal>` sheets featuring non-bubbling background sibling touchables. Work Status (`Full Day`, `Half Day`, `Work Stopped`) validation displays actionable warning banners and prevents blank submissions, while Fastify's `bodyLimit` is increased to 50MB to support high-resolution geotagged photo uploads.
 - **Summary**:
   Clean, self-managed user authentication backed by PostgreSQL with dependable in-app validation.
+
+---
+
+## 15. Modern Mobile Reference UI System (Authentication Suite)
+- **Role & Purpose**:
+  Elevates the client authentication experience to a top-tier, modern mobile design system matching high-end consumer apps (curved asymmetric deep-navy hero header, soft off-white canvas, clean pill inputs, and multi-step recovery flow).
+- **Under the Hood**:
+  - **Asymmetric Curved Hero Header**: Implements a deep midnight navy (`#0B192C`) header with curved radii (`borderBottomLeftRadius: 36`, `borderBottomRightRadius: 64`) housing dynamic subtitles (*"Welcome Back!"*, *"Create Your Account"*), primary page titles (*"Sign In"*, *"Sign Up"*, *"Forgot Password"*), and contextual navigation (*"Diagnostic Hub"*, *"Skip"*).
+  - **Segmented Role Selector**: High-contrast pill toggle smoothly alternating between Business Owner (Email/Password) and Field Officer (Phone/4-Digit PIN) models.
+  - **Form Architecture**: 52px rounded input containers with soft borders (`#E2E8F0`), toggleable password visibility, organization chip picker for field supervisors, and deep navy pill primary buttons (`#0B192C`).
+  - **Comprehensive Recovery Suite**: Built-in multi-step flow for password/PIN recovery featuring illustration badges, method selection (Email vs Phone radio cards), 4-digit verification code input boxes, new password configuration, and checkmark completion views.
+- **Summary**:
+  Pixel-perfect modern mobile authentication UI with asymmetric midnight navy curved header and complete account recovery.
