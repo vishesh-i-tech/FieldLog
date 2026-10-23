@@ -159,3 +159,21 @@ This document outlines the technologies, libraries, architectural decisions, and
   - **Comprehensive Recovery Suite**: Built-in multi-step flow for password/PIN recovery featuring illustration badges, method selection (Email vs Phone radio cards), 4-digit verification code input boxes, new password configuration, and checkmark completion views.
 - **Summary**:
   Pixel-perfect modern mobile authentication UI with asymmetric midnight navy curved header and complete account recovery.
+
+---
+
+## 16. Finora Operations Design System (Emerald Green & Multi-Tab Dashboards)
+- **Role & Purpose**:
+  Transforms the entire FieldLog experience into the modern "Finora" mobile application design system, using curated emerald green gradients, soft `#F8FAF9` canvas, interactive operations analytics, workplace compliance breakdowns, and 5-tab floating navigation mapped directly to real operational data.
+- **Under the Hood**:
+  - **Color Palette & Visual Tokens (`finora.ts`)**: Built around Primary Emerald Green (`#059669`, `#10B981`, `#047857`), Deep Forest Emerald Hero Card (`#064E3B`), and soft pastel mint badges (`#ECFDF5`, `#D1FAE5`) on clean neutral cards (`#FFFFFF`, border `#E6ECE9`).
+  - **Screen 1 (Onboarding / Landing)**: Features "Take Control of Your Operations" headline, subtitle, high-definition generated supervisor sunrise skyline visual (`hero.jpg`), primary emerald "Get Started →" button, and secondary link to Sign In.
+  - **Screen 2 (Home Dashboard)**: Personalized greeting (`Good Morning, [Name] 👋`), profile avatar with live online badge, Deep Emerald Gradient Hero Card with total active sites and percentage verification pill, 4 circular quick-action buttons (`📝 Record`, `📍 Sites`, `🎙️ Voice SOP`, `⚡ Analytics`), and recent workplace feed cards with colored category badges and status tags (`🟢 Full Day`, `🟡 Half Day`, `🔴 Stopped`).
+  - **Screen 3 (Operations Analytics)**: Segmented time intervals (`Week | Month | Year`), total verified logs metric with positive trend pill (`▲ 8.2% vs last month`), interactive bar chart with the active month highlighted in vibrant emerald with a floating tooltip banner (`24 Logs`), and a top reported obstacle breakdown (`Rain / Bad Weather`, `Equipment Breakdown`, `Material Shortage`, `Less Manpower`, `Power Cut`) featuring proportional progress bars and site counts.
+  - **Screen 4 & 5 (Workplace Compliance & Sites)**: Daily verification target card with dual-colored progress bar (`6 verified • 0 pending`), segmented filter pills (`All | Full Day | Half Day | Stopped`), status breakdown donut chart with central completion percentage, supervisor compliance tip banner, and workplace cards with 1-click field officer reassignment dialog.
+  - **Screen 6 & 7 (Operations Milestones & Fleet Performance)**: Scenic mountain hero card (`mountains.jpg`) highlighting *"Build Operational Excellence"*, milestone progress cards (Zero Downtime, GPS Compliance, Machinery Fleet Khata, Voice SOPs), and link to Owner deep management.
+  - **Screen 8 (Profile & Health Gauge)**: User avatar (`avatar.jpg`), name, role badge, deep emerald Operational Compliance health card with "Excellent ↗" status and a 92% circular gauge, structured menu list with chevrons, live Neon Postgres connection latency stats, and outline "Log Out →" pill.
+  - **5-Tab Floating Bottom Navigation Bar**: Fixed bottom bar with active indicator dots and emerald highlights for instant client-side switching across all 5 operational views.
+- **Summary**:
+  Production-grade mobile design system matching the Finora UI reference with real workplaces, supervisors, attendance statuses, and live Neon DB integration.
+

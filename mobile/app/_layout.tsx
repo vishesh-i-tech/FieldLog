@@ -7,44 +7,34 @@ export default function RootLayout() {
   const content = (
     <Stack
       screenOptions={{
-        headerStyle: {
-          backgroundColor: '#121212',
-        },
-        headerTintColor: '#FFFFFF',
-        headerTitleStyle: {
-          fontWeight: '700',
-        },
+        headerShown: false,
         contentStyle: {
-          backgroundColor: '#121212',
+          backgroundColor: '#F8FAF9',
         },
       }}
     >
       <Stack.Screen
         name="index"
         options={{
-          title: 'FieldLog',
-          headerShadowVisible: false,
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="record"
         options={{
-          title: "Daily Record",
-          headerShadowVisible: false,
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="owner"
         options={{
-          title: "Owner",
-          headerShadowVisible: false,
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="login"
         options={{
-          title: "Sign In",
-          headerShadowVisible: false,
+          headerShown: false,
         }}
       />
     </Stack>
@@ -53,7 +43,7 @@ export default function RootLayout() {
   if (Platform.OS === 'web') {
     return (
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <View style={styles.webBackdrop}>
           <View style={styles.webContainer}>
             {content}
@@ -65,7 +55,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {content}
     </SafeAreaProvider>
   );
@@ -74,19 +64,19 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   webBackdrop: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#E8ECE9',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '100vh' as any,
   },
   webContainer: {
     width: '100%',
-    maxWidth: 430,
+    maxWidth: 440,
     height: '100vh' as any,
     maxHeight: 932,
-    backgroundColor: '#121212',
+    backgroundColor: '#F8FAF9',
     overflow: 'hidden',
-    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px #222222' as any,
-    borderRadius: Platform.OS === 'web' ? 16 : 0,
+    boxShadow: '0 25px 50px -12px rgba(16, 80, 50, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)' as any,
+    borderRadius: Platform.OS === 'web' ? 24 : 0,
   },
 });
