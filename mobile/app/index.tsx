@@ -271,8 +271,8 @@ export default function StatusScreen() {
           >
             <Text style={styles.openRecordIcon}>📝</Text>
             <View style={styles.openRecordTextContainer}>
-              <Text style={styles.openRecordTitle}>आज का रिकॉर्ड भरें</Text>
-              <Text style={styles.openRecordSubtitle}>सुपरवाइज़र मोड (Live Camera + GPS + Voice)</Text>
+              <Text style={styles.openRecordTitle}>Submit Today's Record</Text>
+              <Text style={styles.openRecordSubtitle}>Field Officer Mode (Live Camera + GPS + Voice)</Text>
             </View>
             <Text style={styles.openRecordArrow}>→</Text>
           </TouchableOpacity>
@@ -285,8 +285,8 @@ export default function StatusScreen() {
           >
             <Text style={styles.openRecordIcon}>👑</Text>
             <View style={styles.openRecordTextContainer}>
-              <Text style={styles.openOwnerTitle}>मालिक / एडमिन डैशबोर्ड</Text>
-              <Text style={styles.openOwnerSubtitle}>रिपोर्ट देखने वाला मोड (Review All Sites & Voice Notes)</Text>
+              <Text style={styles.openOwnerTitle}>Owner / Admin Dashboard</Text>
+              <Text style={styles.openOwnerSubtitle}>Review All Sites & Voice Notes</Text>
             </View>
             <Text style={styles.openRecordArrow}>→</Text>
           </TouchableOpacity>

@@ -55,22 +55,6 @@ export default function LoginScreen() {
     });
   }, []);
 
-  // 1-Tap Quick Fill Demo Credentials
-  const fillOwnerDemo = () => {
-    setSelectedRole('owner');
-    setAuthMode('signin');
-    setEmail('owner@fieldlog.dev');
-    setPassword('Password123!');
-    setErrorMessage(null);
-  };
-
-  const fillSupervisorDemo = () => {
-    setSelectedRole('supervisor');
-    setAuthMode('signin');
-    setPhone('9811111111');
-    setPin('1234');
-    setErrorMessage(null);
-  };
 
   const handleSubmit = async () => {
     setErrorMessage(null);
@@ -359,19 +343,14 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Quick-fill Demo Chips */}
-            <View style={styles.demoSection}>
-              <Text style={styles.demoSectionLabel}>⚡ 1-Tap Demo Testing Credentials:</Text>
-              <View style={styles.demoChipsRow}>
-                <TouchableOpacity style={styles.demoChip} onPress={fillOwnerDemo}>
-                  <Text style={styles.demoChipText}>👑 Owner: owner@fieldlog.dev</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.demoChip} onPress={fillSupervisorDemo}>
-                  <Text style={styles.demoChipText}>👷 Supervisor: 9811111111 (PIN 1234)</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            {/* Return Navigation */}
+            <TouchableOpacity
+              style={styles.backHomeButton}
+              onPress={() => router.push('/')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.backHomeText}>← Back to Diagnostic Hub</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -574,34 +553,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  demoSection: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#2C2C2E',
-  },
-  demoSectionLabel: {
-    fontSize: 11,
-    color: '#A1A1AA',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  demoChipsRow: {
-    gap: 6,
-  },
-  demoChip: {
-    backgroundColor: '#121212',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+  backHomeButton: {
+    marginTop: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#334155',
+    backgroundColor: '#0F172A',
   },
-  demoChipText: {
-    color: '#2563EB',
-    fontSize: 12,
+  backHomeText: {
+    color: '#94A3B8',
+    fontSize: 13,
     fontWeight: '600',
   },
 });

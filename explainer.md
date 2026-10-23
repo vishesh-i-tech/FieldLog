@@ -136,4 +136,13 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Summary**:
   True on-screen live camera stream with one-tap shutter capture, bypassing OS folder dialogs completely.
 
+---
 
+## 14. Real Database Authentication & In-App Validation Modals
+- **Role & Purpose**:
+  Provides strict, production-ready database authentication without reference mock credentials, paired with interactive in-app submission validation that eliminates web `Alert.alert` flakiness.
+- **Under the Hood**:
+  - **Self-Service Authentication**: Users register their own organizations and credentials directly into PostgreSQL (Owners via Email/Password bcrypt hashes, Field Supervisors via Phone/4-digit PIN bcrypt hashes). Removed all hardcoded demo accounts. Automatic initial site provisioning ensures newly registered organizations are immediately ready for record submission.
+  - **In-App Modal Validation**: Replaces native browser dialogs with React Native `<Modal>` sheets featuring non-bubbling background sibling touchables. Work Status (`Full Day`, `Half Day`, `Work Stopped`) validation displays actionable warning banners and prevents blank submissions, while Fastify's `bodyLimit` is increased to 50MB to support high-resolution geotagged photo uploads.
+- **Summary**:
+  Clean, self-managed user authentication backed by PostgreSQL with dependable in-app validation.

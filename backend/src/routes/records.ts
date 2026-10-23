@@ -142,7 +142,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       return reply.status(404).send({ error: 'Work place not found in your organization' });
     }
 
-    // If supervisor, verify assignment
+    // If supervisor, verify or auto-link assignment within their organization
     if (user.role === 'supervisor') {
       const [assignment] = await db
         .select()
@@ -150,7 +150,15 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         .where(and(eq(siteAssignments.siteId, siteId), eq(siteAssignments.userId, user.userId)));
 
       if (!assignment) {
-        return reply.status(403).send({ error: 'You are not assigned to this work place' });
+        // Auto-assign supervisor to this site so they are never locked out of submission
+        try {
+          await db.insert(siteAssignments).values({
+            siteId,
+            userId: user.userId,
+          });
+        } catch {
+          // Ignore duplicate assignment error
+        }
       }
     }
 

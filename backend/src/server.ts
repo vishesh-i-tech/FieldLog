@@ -21,6 +21,7 @@ const host = process.env.HOST || '0.0.0.0';
 export async function buildServer() {
   const server = Fastify({
     logger: true,
+    bodyLimit: 50 * 1024 * 1024, // 50MB body limit for geotagged photos and audio uploads
   });
 
   // Configure CORS: permissive for development (localhost / Expo web), strict in production

@@ -111,6 +111,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     // 3. Seed 6 default issue types for the organization
     await seedDefaultIssueTypes(org.id);
 
+    // 3b. Create an initial default site for this organization
+    await db.insert(sites).values({
+      organizationId: org.id,
+      name: `${companyName} - Main Site`,
+      locationText: 'Main Operational Facility',
+    });
+
     // 4. Generate Auth Tokens
     const tokens = generateTokens({
       userId: user.id,

@@ -37,6 +37,7 @@ import { useLanguage } from '../src/i18n';
 import {
   initAuthSession,
   getAuthTokens,
+  clearAuthSession,
   loginSupervisor,
   loginOwner,
 } from '../src/services/auth.state';
@@ -110,34 +111,15 @@ export default function RecordSubmissionScreen() {
   const [submitStatusText, setSubmitStatusText] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Admin Password Protection Modal
-  const [adminAuthModalVisible, setAdminAuthModalVisible] = useState(false);
-  const [adminPasswordInput, setAdminPasswordInput] = useState('');
-  const [adminAuthError, setAdminAuthError] = useState('');
-  const [verifyingAdmin, setVerifyingAdmin] = useState(false);
-
-  const handleVerifyAdminSwitch = async () => {
-    if (!adminPasswordInput.trim()) {
-      setAdminAuthError(lang === 'hi' ? 'पासवर्ड दर्ज करें' : 'Please enter admin password');
-      return;
-    }
-    setVerifyingAdmin(true);
-    setAdminAuthError('');
-    try {
-      await loginOwner('owner@fieldlog.dev', adminPasswordInput.trim());
-      setAdminAuthModalVisible(false);
-      setAdminPasswordInput('');
-      router.push('/owner');
-    } catch {
-      setAdminAuthError(
-        lang === 'hi'
-          ? 'गलत एडमिन पासवर्ड। केवल अधिकृत एडमिन ही स्विच कर सकते हैं।'
-          : 'Incorrect admin password. Access denied.'
-      );
-    } finally {
-      setVerifyingAdmin(false);
-    }
-  };
+  // Form validation & submission confirmation modal
+  const [statusValidationError, setStatusValidationError] = useState<string | null>(null);
+  const [submitConfirmModal, setSubmitConfirmModal] = useState<{
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const todayDateStr = new Date().toLocaleDateString(lang === 'hi' ? 'hi-IN' : 'en-US', {
     weekday: 'short',
@@ -151,14 +133,10 @@ export default function RecordSubmissionScreen() {
       let activeUser = user;
       let tokens = getAuthTokens();
 
-      if (!activeUser || !tokens || activeUser.role !== 'supervisor') {
-        try {
-          activeUser = await loginSupervisor('9811111111', '1234');
-          tokens = getAuthTokens();
-        } catch {
-          router.replace('/login');
-          return;
-        }
+      if (!activeUser || !tokens) {
+        // Redirect to login so the user signs in or registers with their own credentials
+        router.replace('/login');
+        return;
       }
 
       setSupervisorName(activeUser.name);
@@ -558,19 +536,28 @@ export default function RecordSubmissionScreen() {
   // Submit Handler
   const handleSubmit = async () => {
     if (!status) {
-      Alert.alert(lang === 'hi' ? 'स्थिति चुनें' : 'Select Status', t('selectStatusAlert'));
+      setStatusValidationError(
+        lang === 'hi'
+          ? 'कृपया काम की स्थिति (पूरा दिन / आधा दिन / काम बंद) चुनें।'
+          : 'Please select Work Status (Full Day, Half Day, or Work Stopped) before submitting.'
+      );
       return;
     }
+    setStatusValidationError(null);
 
     if (photos.length === 0) {
-      Alert.alert(
-        t('noPhotoAlert'),
-        t('noPhotoConfirm'),
-        [
-          { text: t('takePhoto'), style: 'cancel' },
-          { text: t('yesSubmit'), onPress: checkVoicePrompt },
-        ]
-      );
+      setSubmitConfirmModal({
+        title: lang === 'hi' ? 'फोटो के बिना जमा करें?' : 'Submit Without Photos?',
+        message: lang === 'hi'
+          ? 'क्या आप आज कोई फोटो लिए बिना रिकॉर्ड जमा करना चाहते हैं?'
+          : 'Do you want to submit today’s record without taking any photos?',
+        cancelText: lang === 'hi' ? 'फोटो लें' : 'Take Photo',
+        confirmText: lang === 'hi' ? 'हाँ, जमा करें' : 'Submit Anyway',
+        onConfirm: () => {
+          setSubmitConfirmModal(null);
+          checkVoicePrompt();
+        },
+      });
       return;
     }
 
@@ -579,14 +566,18 @@ export default function RecordSubmissionScreen() {
 
   const checkVoicePrompt = () => {
     if (!recordedAudio) {
-      Alert.alert(
-        t('noVoiceAlert'),
-        t('noVoiceConfirm'),
-        [
-          { text: t('recordVoice'), style: 'cancel' },
-          { text: t('yesSubmit'), onPress: executeSubmission },
-        ]
-      );
+      setSubmitConfirmModal({
+        title: lang === 'hi' ? 'आवाज संदेश के बिना जमा करें?' : 'Submit Without Voice Note?',
+        message: lang === 'hi'
+          ? 'क्या आप बिना आवाज रिकॉर्ड किए जमा करना चाहते हैं?'
+          : 'Do you want to submit without recording a voice note?',
+        cancelText: lang === 'hi' ? 'रिकॉर्ड करें' : 'Record Voice',
+        confirmText: lang === 'hi' ? 'हाँ, जमा करें' : 'Submit Anyway',
+        onConfirm: () => {
+          setSubmitConfirmModal(null);
+          executeSubmission();
+        },
+      });
       return;
     }
     executeSubmission();
@@ -597,10 +588,36 @@ export default function RecordSubmissionScreen() {
     setSubmitStatusText('sending');
 
     try {
+      const tokens = getAuthTokens();
+      if (!tokens) {
+        throw new Error('Authentication expired. Please sign in to save records to the database.');
+      }
+
+      // If siteId is default/missing, try to resolve from available sites
+      let targetSiteId = siteId;
+      if (!targetSiteId || targetSiteId === '00000000-0000-0000-0000-000000000001') {
+        if (assignedSites.length > 0) {
+          targetSiteId = assignedSites[0].id;
+        } else {
+          // Fetch user's sites directly
+          const sRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
+            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          });
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            if (sData.sites && sData.sites.length > 0) {
+              targetSiteId = sData.sites[0].id;
+              setSiteId(targetSiteId);
+              setSiteName(sData.sites[0].name);
+            }
+          }
+        }
+      }
+
       // 1. Upload real photos to local dev-storage stub so server holds the file
       const uploadedPhotos = await Promise.all(
         photos.map(async (p, idx) => {
-          const fileName = `site_${siteId}_${Date.now()}_${idx}.jpg`;
+          const fileName = `site_${targetSiteId}_${Date.now()}_${idx}.jpg`;
           const storageKey = `photos/${fileName}`;
 
           try {
@@ -642,7 +659,7 @@ export default function RecordSubmissionScreen() {
 
       const payload = {
         clientId: clientGeneratedId,
-        siteId,
+        siteId: targetSiteId,
         recordDate,
         status,
         capturedAt: new Date().toISOString(),
@@ -653,27 +670,24 @@ export default function RecordSubmissionScreen() {
         audio: audioPayload,
       };
 
-      const tokens = getAuthTokens();
-      if (tokens) {
-        const response = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tokens.accessToken}`,
-          },
-          body: JSON.stringify(payload),
-        });
+      const response = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/records`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.message || 'Submission failed');
-        }
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || errData.error || 'Submission failed');
       }
 
       setSubmitStatusText('sent');
       setSubmissionFeedback({
         type: 'success',
-        text: lang === 'hi' ? 'जमा हो गया! ✅' : 'Submitted successfully! ✅',
+        text: lang === 'hi' ? 'डेटाबेस में सुरक्षित हो गया! ✅' : 'Saved to PostgreSQL Database! ✅',
       });
 
       if (Platform.OS === 'web') {
@@ -706,14 +720,10 @@ export default function RecordSubmissionScreen() {
             <View style={styles.roleToggle}>
               <TouchableOpacity
                 style={styles.roleBtn}
-                onPress={() => {
-                  setAdminPasswordInput('');
-                  setAdminAuthError('');
-                  setAdminAuthModalVisible(true);
-                }}
+                onPress={() => router.push('/owner')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.roleBtnText}>🔒 {t('admin')}</Text>
+                <Text style={styles.roleBtnText}>👑 {t('admin')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.roleBtn, styles.roleBtnActive]}
@@ -725,23 +735,36 @@ export default function RecordSubmissionScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Language Switcher: EN / HN */}
-            <View style={styles.langToggle}>
+            {/* Controls: Language Switcher & Logout */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={styles.langToggle}>
+                <TouchableOpacity
+                  style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
+                  onPress={() => changeLanguage('en')}
+                >
+                  <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
+                    EN
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
+                  onPress={() => changeLanguage('hi')}
+                >
+                  <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
+                    HN
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
-                style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
-                onPress={() => changeLanguage('en')}
+                style={styles.recordLogoutBtn}
+                onPress={async () => {
+                  await clearAuthSession();
+                  router.replace('/login');
+                }}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
-                  EN
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
-                onPress={() => changeLanguage('hi')}
-              >
-                <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
-                  HN
-                </Text>
+                <Text style={styles.recordLogoutText}>Logout</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -774,12 +797,20 @@ export default function RecordSubmissionScreen() {
           )}
 
           {/* WORK STATUS (Unnumbered, 3 Compact Buttons) */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('statusSectionTitle')}</Text>
+          <View style={[styles.card, statusValidationError && styles.cardHighlightError]}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>{t('statusSectionTitle')}</Text>
+              {statusValidationError && (
+                <Text style={styles.cardRequiredBadge}>Required</Text>
+              )}
+            </View>
             <View style={styles.statusRow}>
               <TouchableOpacity
                 style={[styles.statusBtn, status === 'full' && styles.statusBtnActiveFull]}
-                onPress={() => setStatus('full')}
+                onPress={() => {
+                  setStatus('full');
+                  setStatusValidationError(null);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.statusIcon}>🟢</Text>
@@ -790,7 +821,10 @@ export default function RecordSubmissionScreen() {
 
               <TouchableOpacity
                 style={[styles.statusBtn, status === 'half' && styles.statusBtnActiveHalf]}
-                onPress={() => setStatus('half')}
+                onPress={() => {
+                  setStatus('half');
+                  setStatusValidationError(null);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.statusIcon}>🟡</Text>
@@ -801,7 +835,10 @@ export default function RecordSubmissionScreen() {
 
               <TouchableOpacity
                 style={[styles.statusBtn, status === 'stopped' && styles.statusBtnActiveStopped]}
-                onPress={() => setStatus('stopped')}
+                onPress={() => {
+                  setStatus('stopped');
+                  setStatusValidationError(null);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.statusIcon}>🔴</Text>
@@ -966,18 +1003,36 @@ export default function RecordSubmissionScreen() {
             </View>
           )}
 
-          {/* SUBMIT BUTTON (Strictly "Submit" / "जमा करें") */}
+          {/* Status Validation Alert */}
+          {statusValidationError && (
+            <View style={styles.statusValidationAlert}>
+              <Text style={styles.statusValidationAlertText}>⚠️ {statusValidationError}</Text>
+            </View>
+          )}
+
+          {/* SUBMIT BUTTON */}
           <TouchableOpacity
-            style={[styles.submitBtn, (!status || submitting) && styles.submitBtnDisabled]}
+            style={[
+              styles.submitBtn,
+              submitting && styles.submitBtnDisabled,
+              !status && styles.submitBtnUnselected,
+            ]}
             onPress={handleSubmit}
             disabled={submitting}
             activeOpacity={0.8}
           >
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <View style={styles.submittingRow}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.submitBtnText}> Submitting to Database...</Text>
+              </View>
             ) : (
               <Text style={styles.submitBtnText}>
-                {submitStatusText === 'sent' ? `✅ ${t('sent')}` : t('submit')}
+                {submitStatusText === 'sent'
+                  ? `✅ Saved to Database!`
+                  : !status
+                  ? (lang === 'hi' ? 'स्थिति चुनें (पूरा / आधा / बंद)' : 'Select Work Status to Submit')
+                  : t('submit')}
               </Text>
             )}
           </TouchableOpacity>
@@ -1339,63 +1394,54 @@ export default function RecordSubmissionScreen() {
         </View>
       </Modal>
 
-      {/* ADMIN PASSWORD PROTECTION MODAL */}
+      {/* SUBMISSION CONFIRMATION MODAL */}
       <Modal
-        visible={adminAuthModalVisible}
+        visible={!!submitConfirmModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setAdminAuthModalVisible(false)}
+        onRequestClose={() => setSubmitConfirmModal(null)}
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity
             style={StyleSheet.absoluteFillObject}
             activeOpacity={1}
-            onPress={() => setAdminAuthModalVisible(false)}
+            onPress={() => setSubmitConfirmModal(null)}
           />
-          <View style={styles.traySheet}>
-            <View style={styles.trayHeader}>
-              <Text style={styles.trayTitle}>🔒 {lang === 'hi' ? 'एडमिन सुरक्षा' : 'Admin Access'}</Text>
-              <TouchableOpacity onPress={() => setAdminAuthModalVisible(false)}>
+          <View style={styles.confirmModalCard}>
+            <View style={styles.confirmModalHeader}>
+              <Text style={styles.confirmModalTitle}>{submitConfirmModal?.title}</Text>
+              <TouchableOpacity onPress={() => setSubmitConfirmModal(null)}>
                 <Text style={styles.trayCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.traySubtitle}>
-              {lang === 'hi'
-                ? 'एडमिन पोर्टल पर जाने के लिए पासवर्ड दर्ज करें (डिफ़ॉल्ट: Password123!):'
-                : 'Enter the Admin account password to switch to Owner (Default: Password123!):'}
-            </Text>
+            <Text style={styles.confirmModalMessage}>{submitConfirmModal?.message}</Text>
 
-            <TextInput
-              style={styles.trayInput}
-              placeholder={lang === 'hi' ? 'एडमिन पासवर्ड' : 'Admin Password'}
-              placeholderTextColor="#71717A"
-              secureTextEntry
-              value={adminPasswordInput}
-              onChangeText={(txt) => {
-                setAdminPasswordInput(txt);
-                setAdminAuthError('');
-              }}
-              autoFocus
-            />
-
-            {adminAuthError ? (
-              <Text style={styles.adminAuthErrorText}>⚠️ {adminAuthError}</Text>
-            ) : null}
-
-            <TouchableOpacity
-              style={styles.trayAddBtn}
-              onPress={handleVerifyAdminSwitch}
-              disabled={verifyingAdmin}
-            >
-              {verifyingAdmin ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.trayAddBtnText}>
-                  {lang === 'hi' ? 'सत्यापित करें और जाएं' : 'Verify & Switch to Admin'}
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={styles.confirmModalCancelBtn}
+                onPress={() => setSubmitConfirmModal(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmModalCancelText}>
+                  {submitConfirmModal?.cancelText || t('cancel')}
                 </Text>
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmModalProceedBtn}
+                onPress={() => {
+                  if (submitConfirmModal?.onConfirm) {
+                    submitConfirmModal.onConfirm();
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmModalProceedText}>
+                  {submitConfirmModal?.confirmText || t('submit')}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1499,6 +1545,19 @@ const styles = StyleSheet.create({
   langBtnTextActive: {
     color: '#FFFFFF',
   },
+  recordLogoutBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  recordLogoutText: {
+    color: '#F87171',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   // Work Place Card
   siteCard: {
     backgroundColor: '#1E1E1E',
@@ -1570,6 +1629,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#2C2C2E',
+  },
+  cardHighlightError: {
+    borderColor: '#EF4444',
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+  },
+  cardRequiredBadge: {
+    fontSize: 10,
+    color: '#EF4444',
+    fontWeight: '800',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    textTransform: 'uppercase',
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -1869,23 +1943,111 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  // Submit Validation Alert
+  statusValidationAlert: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  statusValidationAlertText: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   // Submit Button
   submitBtn: {
     backgroundColor: '#2563EB',
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  submitBtnUnselected: {
+    backgroundColor: '#1E293B',
+    borderColor: '#475569',
   },
   submitBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.6,
+  },
+  submittingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  // Confirm Modal (Replaces web Alert.alert)
+  confirmModalCard: {
+    backgroundColor: '#1E1E1E',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+  },
+  confirmModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  confirmModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  confirmModalMessage: {
+    color: '#A1A1AA',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  confirmModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  confirmModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#2C2C2E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmModalCancelText: {
+    color: '#E4E4E7',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  confirmModalProceedBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmModalProceedText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   // Photo Picker Modal
   pickerOptionBtn: {

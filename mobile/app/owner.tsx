@@ -20,6 +20,7 @@ import {
   getCurrentUser,
   getAuthTokens,
   clearAuthSession,
+  initAuthSession,
   loginOwner,
   loginSupervisor,
 } from '../src/services/auth.state';
@@ -213,18 +214,12 @@ export default function OwnerDashboard() {
       let user = getCurrentUser();
       let tokens = getAuthTokens();
 
-      if (!tokens || !user || user.role !== 'owner') {
-        try {
-          const ownerUser = await loginOwner('owner@fieldlog.dev', 'Password123!');
-          user = ownerUser;
-          tokens = getAuthTokens();
-        } catch {
-          router.replace('/login');
-          return;
-        }
+      if (!tokens || !user) {
+        user = await initAuthSession();
+        tokens = getAuthTokens();
       }
 
-      if (!tokens || !user) {
+      if (!tokens || !user || user.role !== 'owner') {
         router.replace('/login');
         return;
       }
@@ -652,14 +647,7 @@ export default function OwnerDashboard() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.roleBtn}
-              onPress={async () => {
-                try {
-                  await loginSupervisor('9811111111', '1234');
-                  router.push('/record');
-                } catch {
-                  router.push('/record');
-                }
-              }}
+              onPress={() => router.push('/record')}
               activeOpacity={0.8}
             >
               <Text style={styles.roleBtnText} numberOfLines={1}>
@@ -668,23 +656,36 @@ export default function OwnerDashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Language Switcher: EN / HN */}
-          <View style={styles.langToggle}>
+          {/* Controls: Language Switcher & Logout */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={styles.langToggle}>
+              <TouchableOpacity
+                style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
+                onPress={() => changeLanguage('en')}
+              >
+                <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
+                  EN
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
+                onPress={() => changeLanguage('hi')}
+              >
+                <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
+                  HN
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              style={[styles.langBtn, lang === 'en' && styles.langBtnActive]}
-              onPress={() => changeLanguage('en')}
+              style={styles.ownerLogoutBtn}
+              onPress={async () => {
+                await clearAuthSession();
+                router.replace('/login');
+              }}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.langBtnText, lang === 'en' && styles.langBtnTextActive]}>
-                EN
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.langBtn, lang === 'hi' && styles.langBtnActive]}
-              onPress={() => changeLanguage('hi')}
-            >
-              <Text style={[styles.langBtnText, lang === 'hi' && styles.langBtnTextActive]}>
-                HN
-              </Text>
+              <Text style={styles.ownerLogoutText}>Logout</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1647,6 +1648,19 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 6,
+  },
+  ownerLogoutBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  ownerLogoutText: {
+    color: '#F87171',
+    fontSize: 11,
+    fontWeight: '700',
   },
   langBtnActive: {
     backgroundColor: '#2563EB',
