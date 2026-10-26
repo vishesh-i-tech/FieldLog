@@ -16,7 +16,10 @@ export const devStorageRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
     }
 
     const safeKey = key.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-    const targetFile = path.join(uploadDir, safeKey);
+    const targetFile = path.resolve(uploadDir, safeKey);
+    if (!targetFile.startsWith(uploadDir) || safeKey.includes('..')) {
+      return reply.status(400).send({ error: 'Invalid file key' });
+    }
 
     const buffer: any = await request.body;
     if (Buffer.isBuffer(buffer)) {
@@ -54,7 +57,10 @@ export const devStorageRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
   fastify.get('/api/v1/dev-storage/files/:key', async (request, reply) => {
     const { key } = request.params as { key: string };
     const safeKey = key.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-    const targetFile = path.join(uploadDir, safeKey);
+    const targetFile = path.resolve(uploadDir, safeKey);
+    if (!targetFile.startsWith(uploadDir) || safeKey.includes('..')) {
+      return reply.status(400).send({ error: 'Invalid file key' });
+    }
 
     if (!fs.existsSync(targetFile)) {
       return reply.status(404).send({ error: 'File not found' });
