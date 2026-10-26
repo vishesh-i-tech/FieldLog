@@ -29,8 +29,16 @@ export const devStorageRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
         fs.writeFileSync(targetFile, buffer);
       }
     } else if (buffer && typeof buffer === 'object' && buffer.dataUrl) {
-      const base64Data = buffer.dataUrl.replace(/^data:image\/\w+;base64,/, '');
-      fs.writeFileSync(targetFile, Buffer.from(base64Data, 'base64'));
+      if (typeof buffer.dataUrl === 'string' && buffer.dataUrl.startsWith('data:image/')) {
+        const base64Data = buffer.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(targetFile, Buffer.from(base64Data, 'base64'));
+      } else if (typeof buffer.dataUrl === 'string' && !buffer.dataUrl.startsWith('file:') && !buffer.dataUrl.startsWith('content:')) {
+        try {
+          fs.writeFileSync(targetFile, Buffer.from(buffer.dataUrl, 'base64'));
+        } catch {
+          fs.writeFileSync(targetFile, Buffer.from(''));
+        }
+      }
     } else {
       fs.writeFileSync(targetFile, JSON.stringify(buffer || ''));
     }

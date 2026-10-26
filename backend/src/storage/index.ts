@@ -25,7 +25,10 @@ export class LocalStorageProvider implements IStorageProvider {
   private baseDir: string;
   private serverBaseUrl: string;
 
-  constructor(baseDir = './uploads', serverBaseUrl = 'http://localhost:4000') {
+  constructor(
+    baseDir = './uploads',
+    serverBaseUrl = process.env.API_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:4000'
+  ) {
     this.baseDir = path.resolve(process.cwd(), baseDir);
     this.serverBaseUrl = serverBaseUrl;
 

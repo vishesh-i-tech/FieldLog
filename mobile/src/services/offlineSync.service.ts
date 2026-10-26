@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { DEFAULT_API_BASE_URL } from '../constants/config';
 import { getAuthTokens } from './auth.state';
+import { compressPhoto } from './photo.service';
 
 export interface QueuedRecordItem {
   id: string;
@@ -346,11 +347,23 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
             const fileName = `site_${item.siteId}_${Date.now()}_${idx}.jpg`;
             const storageKey = `photos/${fileName}`;
 
+            let dataUrlToSend = p.uri;
+            if (dataUrlToSend && (dataUrlToSend.startsWith('file://') || dataUrlToSend.startsWith('content://'))) {
+              try {
+                const manip = await compressPhoto(dataUrlToSend);
+                if (manip.uri && manip.uri.startsWith('data:image/')) {
+                  dataUrlToSend = manip.uri;
+                }
+              } catch (convErr) {
+                console.warn('Could not compress offline photo to dataUrl:', convErr);
+              }
+            }
+
             try {
               await fetch(`${DEFAULT_API_BASE_URL}/api/v1/dev-storage/upload?key=${encodeURIComponent(storageKey)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dataUrl: p.uri }),
+                body: JSON.stringify({ dataUrl: dataUrlToSend }),
               });
             } catch (uploadErr) {
               console.warn('Offline photo storage upload notice:', uploadErr);

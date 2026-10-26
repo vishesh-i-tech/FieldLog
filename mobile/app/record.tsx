@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   TextInput,
+  StatusBar,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -679,11 +680,23 @@ export default function RecordSubmissionScreen() {
           const fileName = `site_${targetSiteId}_${Date.now()}_${idx}.jpg`;
           const storageKey = `photos/${fileName}`;
 
+          let dataUrlToSend = p.uri;
+          if (dataUrlToSend && (dataUrlToSend.startsWith('file://') || dataUrlToSend.startsWith('content://'))) {
+            try {
+              const manip = await compressPhoto(dataUrlToSend);
+              if (manip.uri && manip.uri.startsWith('data:image/')) {
+                dataUrlToSend = manip.uri;
+              }
+            } catch (convErr) {
+              console.warn('Could not compress photo to dataUrl:', convErr);
+            }
+          }
+
           try {
             await fetch(`${DEFAULT_API_BASE_URL}/api/v1/dev-storage/upload?key=${encodeURIComponent(storageKey)}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ dataUrl: p.uri }),
+              body: JSON.stringify({ dataUrl: dataUrlToSend }),
             });
           } catch (uploadErr) {
             console.warn('Storage upload note:', uploadErr);
@@ -1611,6 +1624,7 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#121212',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 6 : 0,
   },
   mainWrapper: {
     flex: 1,

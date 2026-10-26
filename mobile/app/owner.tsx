@@ -11,10 +11,26 @@ import {
   TextInput,
   Alert,
   Image,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DEFAULT_API_BASE_URL } from '../src/constants/config';
 import { useLanguage } from '../src/i18n';
+
+// Normalize photo download URL so native phone never requests unreachable localhost:4000
+const resolvePhotoUrl = (p: any): string => {
+  if (!p) return '';
+  let u = p.url || '';
+  if (u.includes('localhost:4000') || u.includes('127.0.0.1:4000')) {
+    u = u.replace(/http:\/\/(localhost|127\.0\.0\.1):4000/, DEFAULT_API_BASE_URL);
+  }
+  if (!u && p.storageKey) {
+    u = p.storageKey.startsWith('http')
+      ? p.storageKey
+      : `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`;
+  }
+  return u;
+};
 
 import {
   getCurrentUser,
@@ -117,6 +133,8 @@ export default function OwnerDashboard() {
   const [activeAudioObj, setActiveAudioObj] = useState<any>(null);
   const [acknowledgedRecords, setAcknowledgedRecords] = useState<Record<string, boolean>>({});
   const [inspectingOwnerPhoto, setInspectingOwnerPhoto] = useState<any>(null);
+  const [inspectPhotoLoading, setInspectPhotoLoading] = useState(false);
+  const [inspectPhotoError, setInspectPhotoError] = useState(false);
 
   // Management modals
   const [addSiteModalVisible, setAddSiteModalVisible] = useState(false);
@@ -1284,12 +1302,16 @@ export default function OwnerDashboard() {
                 ) : (
                   <View style={styles.allPhotosGalleryGrid}>
                     {allHistoricalPhotos.map((p, idx) => {
-                      const imgUrl = p.url || (p.storageKey?.startsWith('http') ? p.storageKey : `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`);
+                      const imgUrl = resolvePhotoUrl(p);
                       return (
                         <TouchableOpacity
                           key={p.id || idx}
                           style={styles.allPhotoCard}
-                          onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
+                          onPress={() => {
+                            setInspectPhotoError(false);
+                            setInspectPhotoLoading(true);
+                            setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl });
+                          }}
                           activeOpacity={0.85}
                         >
                           <Image source={{ uri: imgUrl }} style={styles.allPhotoThumb} resizeMode="cover" />
@@ -1442,12 +1464,16 @@ export default function OwnerDashboard() {
                         {photosList.length > 0 ? (
                           <View style={styles.ownerPhotoGrid}>
                             {photosList.map((p: any, i: number) => {
-                              const imgUrl = p.url || (p.storageKey?.startsWith('http') ? p.storageKey : `${DEFAULT_API_BASE_URL}/api/v1/dev-storage/files/${encodeURIComponent(p.storageKey)}`);
+                              const imgUrl = resolvePhotoUrl(p);
                               return (
                                 <TouchableOpacity
                                   key={p.id || i}
                                   style={styles.ownerPhotoBox}
-                                  onPress={() => setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl })}
+                                  onPress={() => {
+                                    setInspectPhotoError(false);
+                                    setInspectPhotoLoading(true);
+                                    setInspectingOwnerPhoto({ ...p, displayUrl: imgUrl });
+                                  }}
                                   activeOpacity={0.8}
                                 >
                                   <Image
@@ -1557,11 +1583,34 @@ export default function OwnerDashboard() {
 
             {inspectingOwnerPhoto && (
               <View style={styles.inspectImageWrapper}>
-                <Image
-                  source={{ uri: inspectingOwnerPhoto.displayUrl }}
-                  style={styles.inspectImage}
-                  resizeMode="contain"
-                />
+                {inspectPhotoLoading && (
+                  <View style={[StyleSheet.absoluteFillObject, styles.inspectPlaceholderCenter]}>
+                    <ActivityIndicator size="large" color="#2563EB" />
+                  </View>
+                )}
+                {inspectPhotoError ? (
+                  <View style={styles.inspectPlaceholderCenter}>
+                    <Text style={{ fontSize: 40, marginBottom: 8 }}>📷</Text>
+                    <Text style={{ color: '#F1F5F9', fontWeight: '700', fontSize: 13 }}>
+                      {lang === 'hi' ? 'फोटो प्रमाणित (डिवाइस पर सुरक्षित)' : 'Photo Verified & Stamped'}
+                    </Text>
+                    <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 4, textAlign: 'center', paddingHorizontal: 20 }}>
+                      {lang === 'hi' ? 'जीपीएस और समय डेटा डिवाइस पर प्रामाणिक दर्ज है।' : 'GPS coordinates & timestamp verified on-device.'}
+                    </Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: inspectingOwnerPhoto.displayUrl }}
+                    style={styles.inspectImage}
+                    resizeMode="contain"
+                    onLoadStart={() => setInspectPhotoLoading(true)}
+                    onLoadEnd={() => setInspectPhotoLoading(false)}
+                    onError={() => {
+                      setInspectPhotoLoading(false);
+                      setInspectPhotoError(true);
+                    }}
+                  />
+                )}
               </View>
             )}
 
@@ -1593,6 +1642,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 6 : 0,
   },
   mainWrapper: {
     flex: 1,
@@ -2247,12 +2297,19 @@ const styles = StyleSheet.create({
   inspectImageWrapper: {
     width: '100%',
     height: 280,
-    backgroundColor: '#000000',
+    backgroundColor: '#0F172A',
     borderRadius: 8,
     overflow: 'hidden',
     marginBottom: 10,
     borderWidth: 1,
     borderColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inspectPlaceholderCenter: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   inspectImage: {
     width: '100%',

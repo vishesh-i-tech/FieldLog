@@ -489,10 +489,14 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       .from(media)
       .where(eq(media.recordId, record.id));
 
+    const host = request.headers.host || 'localhost:4000';
+    const proto = (request.headers['x-forwarded-proto'] as string) || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+    const dynamicBaseUrl = `${proto}://${host}`;
+
     const mediaWithUrls = mediaList.map((m) => {
       let downloadUrl = m.storageKey;
       if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://') && !downloadUrl.startsWith('data:')) {
-        downloadUrl = `http://localhost:4000/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
+        downloadUrl = `${dynamicBaseUrl}/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
       }
       return {
         ...m,
@@ -581,11 +585,15 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         .from(media)
         .where(inArray(media.recordId, recordIds));
 
+      const host = request.headers.host || 'localhost:4000';
+      const proto = (request.headers['x-forwarded-proto'] as string) || (host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https');
+      const dynamicBaseUrl = `${proto}://${host}`;
+
       for (const m of mediaRows) {
         if (!recordMediaMap[m.recordId]) recordMediaMap[m.recordId] = [];
         let downloadUrl = m.storageKey;
         if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://') && !downloadUrl.startsWith('data:')) {
-          downloadUrl = `http://localhost:4000/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
+          downloadUrl = `${dynamicBaseUrl}/api/v1/dev-storage/files/${encodeURIComponent(m.storageKey)}`;
         }
         recordMediaMap[m.recordId].push({
           ...m,

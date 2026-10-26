@@ -203,3 +203,15 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Summary**:
   Zero dummy data on launch, 100% database-verified authentication, and strict separation between Owner management and Field Officer reporting.
 
+---
+
+## 19. Android Notch Insets, Native Audio Recorder Hook, and Resilient Geotagged Photo Pipeline
+- **Role & Purpose**:
+  Resolves mobile device physical display overlaps (camera notch, status bar clock/battery), eliminates audio recording initialization crashes (`Cannot read property 'prototype' of undefined`), and ensures photos captured on Android devices are cleanly encoded in base64, persisted on cloud storage, and rendered in the Owner review modal without network rejection or black-screen artifacts.
+- **Under the Hood**:
+  - **Android Notch & Status Bar Inset Handling**: Core React Native `SafeAreaView` on Android defaults to 0 top inset. Applied `paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 28) + 6 : 0` across `owner.tsx`, `record.tsx`, and `login.tsx`. This guarantees that top control bars, language switchers, and logout buttons sit cleanly below physical punch-hole camera notches and system clock/battery indicators.
+  - **Safe Native Audio Recording (`expo-audio`)**: In Expo SDK 52, `ExpoAudio.AudioRecorder` is exported as a TypeScript interface rather than a class constructor, causing `new ExpoAudio.AudioRecorder()` to throw runtime prototype errors. Updated `audio.service.ts` to instantiate through `(ExpoAudio.AudioModule?.AudioRecorder || ExpoAudio.AudioRecorder)` with proactive microphone permission checks and safe fallbacks for both recording and playback.
+  - **Base64 Photo Pipeline & Dynamic Host Resolution**: Native image capture through `CameraView` compressed images to local device file paths (`file:///data/user/0/...`), which failed when sent as string payloads to remote storage. Updated `compressPhoto` in `photo.service.ts` with `{ base64: true }` to guarantee complete data URL generation (`data:image/jpeg;base64,...`), and ensured `devStorage.ts` cleanly decodes base64 buffers into JPEG binaries. In `records.ts`, replaced hardcoded `http://localhost:4000` URLs with dynamic `host` and `x-forwarded-proto` header resolution, while `owner.tsx` normalizes any local IP URLs to `DEFAULT_API_BASE_URL` with an interactive loading state and verified GPS fallback watermark.
+- **Summary**:
+  Hardware-safe status bar spacing, crash-proof native voice recording, and end-to-end base64 geotagged photo capture and cloud rendering.
+

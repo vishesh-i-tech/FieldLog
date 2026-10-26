@@ -430,23 +430,20 @@ export async function compressPhoto(uri: string): Promise<{
     const result = await ImageManipulator.manipulateAsync(
       uri,
       [{ resize: { width: 1280 } }],
-      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
 
-    let sizeBytes = 350000;
-    try {
-      const response = await fetch(result.uri);
-      const blob = await response.blob();
-      sizeBytes = blob.size;
-    } catch {}
+    const dataUri = result.base64 ? `data:image/jpeg;base64,${result.base64}` : result.uri;
+    const sizeBytes = result.base64 ? Math.round(result.base64.length * 0.75) : 350000;
 
     return {
-      uri: result.uri,
+      uri: dataUri,
       width: result.width,
       height: result.height,
       sizeBytes,
     };
   } catch (err) {
+    console.warn('compressPhoto error:', err);
     return { uri, width: 1080, height: 1920, sizeBytes: 500000 };
   }
 }

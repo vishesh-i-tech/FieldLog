@@ -133,20 +133,52 @@ export async function startAudioRecording(): Promise<void> {
   // Native implementation via expo-audio
   try {
     const ExpoAudio = await import('expo-audio');
-    await ExpoAudio.setAudioModeAsync({
-      allowsRecording: true,
-      playsInSilentMode: true,
-    });
+
+    try {
+      const perm = await ExpoAudio.requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        throw new Error('Microphone permission not granted');
+      }
+    } catch (permErr: any) {
+      if (permErr?.message?.includes('Microphone permission')) {
+        throw permErr;
+      }
+      console.warn('Audio permission request note:', permErr);
+    }
+
+    try {
+      await ExpoAudio.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+    } catch (modeErr) {
+      console.warn('Audio mode setting note:', modeErr);
+    }
 
     nativeStartTime = Date.now();
-    const recording = new ExpoAudio.AudioRecorder({
+
+    // Look for native AudioRecorder constructor on AudioModule or ExpoAudio export
+    const AudioRecorderConstructor =
+      (ExpoAudio as any).AudioModule?.AudioRecorder ||
+      (ExpoAudio as any).AudioRecorder;
+
+    if (!AudioRecorderConstructor) {
+      throw new Error('Native audio recording module is not available on this device');
+    }
+
+    const recording = new AudioRecorderConstructor({
       extension: '.m4a',
       sampleRate: 44100,
       numberOfChannels: 1,
       bitRate: 64000,
     });
-    await recording.prepareToRecordAsync();
-    recording.record();
+
+    if (typeof recording.prepareToRecordAsync === 'function') {
+      await recording.prepareToRecordAsync();
+    }
+    if (typeof recording.record === 'function') {
+      recording.record();
+    }
     nativeRecording = recording;
   } catch (err) {
     console.error('Error starting native recording:', err);
@@ -202,14 +234,15 @@ export async function stopAudioRecording(): Promise<RecordedAudioResult> {
 
   // Native stop recording
   try {
-    if (!nativeRecording) {
-      throw new Error('No active native recording');
-    }
-
     const elapsedSeconds = Math.max(1, Math.round((Date.now() - nativeStartTime) / 1000));
-    await nativeRecording.stop();
-    const uri = nativeRecording.uri;
-    nativeRecording = null;
+    let uri = '';
+    if (nativeRecording) {
+      if (typeof nativeRecording.stop === 'function') {
+        await nativeRecording.stop();
+      }
+      uri = nativeRecording.uri || '';
+      nativeRecording = null;
+    }
 
     return {
       uri: uri || '',
@@ -244,11 +277,17 @@ export async function playAudio(uri: string, onEnded?: () => void): Promise<void
   // Native playback
   try {
     const ExpoAudio = await import('expo-audio');
-    const player = ExpoAudio.createAudioPlayer(uri);
-    nativeSound = player;
-    player.play();
-    if (onEnded) {
-      // player status update subscription
+    let player: any = null;
+    if (typeof ExpoAudio.createAudioPlayer === 'function') {
+      player = ExpoAudio.createAudioPlayer(uri);
+    } else if ((ExpoAudio as any).AudioModule?.AudioPlayer) {
+      player = new (ExpoAudio as any).AudioModule.AudioPlayer(uri, 500);
+    }
+    if (player) {
+      nativeSound = player;
+      if (typeof player.play === 'function') {
+        player.play();
+      }
     }
   } catch (err) {
     console.warn('Native playback error:', err);
