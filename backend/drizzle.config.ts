@@ -6,10 +6,10 @@ dotenv.config();
 export default defineConfig({
   schema: './src/db/schema.ts',
   out: './drizzle',
-  dialect: 'postgresql',
+  dialect: 'turso',
   dbCredentials: {
-    // For migrations, use direct connection if available, otherwise pooled
-    url: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
+    url: process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || 'file:local.db',
+    authToken: process.env.TURSO_AUTH_TOKEN || undefined,
   },
   verbose: true,
   strict: true,

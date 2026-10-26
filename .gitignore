@@ -31,6 +31,11 @@ web-build/
 backend/uploads/
 uploads/
 
+# Local SQLite databases
+*.db
+*.db-*
+*.sqlite
+
 # IDE & OS
 .vscode/
 .idea/

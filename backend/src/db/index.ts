@@ -1,27 +1,30 @@
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { createClient, type Client } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL;
+// Determine connection URL (Turso cloud or fallback to local SQLite file)
+const url = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL || 'file:local.db';
+const authToken = process.env.TURSO_AUTH_TOKEN || undefined;
 
-// Resilient Postgres client using connection pooler
-let sqlClient: ReturnType<typeof postgres> | null = null;
+let libsqlClient: Client | null = null;
 let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
-if (connectionString) {
-  sqlClient = postgres(connectionString, {
-    ssl: 'require',
-    max: 10,
-    idle_timeout: 20,
-    connect_timeout: 10,
-    // Neon scale-to-zero retry handler
-    onnotice: () => {},
+try {
+  libsqlClient = createClient({
+    url,
+    authToken,
   });
+  dbInstance = drizzle(libsqlClient, { schema });
 
-  dbInstance = drizzle(sqlClient, { schema });
+  if (url.startsWith('file:')) {
+    libsqlClient.execute('PRAGMA journal_mode = WAL;').catch(() => {});
+    libsqlClient.execute('PRAGMA busy_timeout = 5000;').catch(() => {});
+  }
+} catch (err) {
+  console.error('Failed to initialize Turso / libSQL client:', err);
 }
 
 export function getDb() {
@@ -29,7 +32,7 @@ export function getDb() {
 }
 
 export function getSqlClient() {
-  return sqlClient;
+  return libsqlClient;
 }
 
 export interface DbHealthResult {
@@ -40,22 +43,21 @@ export interface DbHealthResult {
 }
 
 /**
- * Tests the database connection with automatic retry (tolerates Neon cold starts).
+ * Tests the database connection with automatic retry (tolerates transient network hiccups).
  */
 export async function testDbConnection(retries = 2, delayMs = 1500): Promise<DbHealthResult> {
-  if (!connectionString || !sqlClient) {
+  if (!libsqlClient) {
     return {
       connected: false,
       configured: false,
-      error: 'DATABASE_URL is not set in backend/.env',
+      error: 'Turso/libSQL client is not initialized',
     };
   }
 
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     const startTime = Date.now();
     try {
-      // Simple lightweight query to check Neon responsiveness
-      await sqlClient`SELECT 1`;
+      await libsqlClient.execute('SELECT 1');
       const latencyMs = Date.now() - startTime;
       return {
         connected: true,
@@ -65,13 +67,12 @@ export async function testDbConnection(retries = 2, delayMs = 1500): Promise<DbH
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       if (attempt <= retries) {
-        // Wait before retrying (gives Neon a chance to wake up)
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       } else {
         return {
           connected: false,
           configured: true,
-          error: `Failed to connect to Neon after ${attempt} attempts: ${errorMsg}`,
+          error: `Failed to connect to Turso/libSQL after ${attempt} attempts: ${errorMsg}`,
         };
       }
     }
@@ -79,7 +80,7 @@ export async function testDbConnection(retries = 2, delayMs = 1500): Promise<DbH
 
   return {
     connected: false,
-    configured: true,
+    configured: false,
     error: 'Unknown database connection error',
   };
 }

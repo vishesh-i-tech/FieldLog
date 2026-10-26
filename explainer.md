@@ -24,13 +24,13 @@ This document outlines the technologies, libraries, architectural decisions, and
 
 ---
 
-## 3. Drizzle ORM & Database Layer
+## 3. Turso (libSQL) & Drizzle ORM Database Layer
 - **Role & Purpose**:
-  Type-safe Object-Relational Mapping for relational database management (PostgreSQL / SQLite).
+  Provides a unified, distributed SQLite database layer for FieldLog, eliminating cloud cold-start latency and harmonizing server storage with the client-side offline SQLite queue.
 - **Under the Hood**:
-  Drizzle provides zero-overhead SQL generation with compile-time type safety. Schemas in `backend/src/db/schema.ts` define organizations, users, sites (work places), site assignments, daily records, issue types, and media attachments with foreign key constraints.
+  Uses `@libsql/client` with `drizzle-orm/libsql`. The schema in `backend/src/db/schema.ts` defines organizations, users, sites, site assignments, daily records, issue types, and media attachments with foreign key constraints. In development, it automatically boots against a local SQLite file (`file:local.db`) with Write-Ahead Logging (WAL) and busy timeout handlers; in production, it points to a cloud-distributed Turso database (`libsql://...`) with edge replication.
 - **Summary**:
-  Type-safe database interactions with automatic migrations and zero runtime bloat.
+  Instantaneous sub-10ms queries, zero cold starts, and seamless parity with mobile SQLite.
 
 ---
 

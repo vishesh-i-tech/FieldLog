@@ -26,8 +26,8 @@ async function runDevSeed() {
 
   const health = await testDbConnection(2, 1000);
   if (!health.connected) {
-    console.error(`❌ Could not connect to Neon Postgres: ${health.error}`);
-    console.error('Please verify DATABASE_URL in backend/.env before seeding.');
+    console.error(`❌ Could not connect to database: ${health.error}`);
+    console.error('Please verify TURSO_DATABASE_URL in backend/.env before seeding.');
     process.exit(1);
   }
 
@@ -199,8 +199,8 @@ async function runDevSeed() {
           submittedBy: item.sup.id,
           recordDate,
           status,
-          capturedAt: capturedDate,
-          receivedAt: capturedDate,
+          capturedAt: capturedDate.toISOString(),
+          receivedAt: capturedDate.toISOString(),
           missingPhoto: false,
           missingVoice: dayOffset > 2,
         })
@@ -223,8 +223,8 @@ async function runDevSeed() {
         sizeBytes: 420000,
         latitude: item.site.latitude,
         longitude: item.site.longitude,
-        accuracyM: '8.50',
-        capturedAt: capturedDate,
+        accuracyM: 8.5,
+        capturedAt: capturedDate.toISOString(),
       });
     }
   }
