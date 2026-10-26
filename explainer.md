@@ -190,3 +190,16 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Summary**:
   Guarantees 100% data reliability in the field with zero data loss, offline site selection, and automatic background upload upon network restoration.
 
+---
+
+## 18. Clean Enterprise Auth Routing & Role-Isolated Onboarding Flow
+- **Role & Purpose**:
+  Eliminates pre-populated mock demo states and unauthenticated backdoors, ensuring first-time app launches display a clean authentication screen and enforcing that Field Officers are provisioned strictly by their Business Owner before they can log in.
+- **Under the Hood**:
+  - **Dynamic Auth Entry Router (`index.tsx`)**: Replaces the monolithic 2700-line demo screen with a lightweight (<1KB) authentication guard. On app launch, it initializes the session via `initAuthSession()`. If an authenticated Owner session is active, it routes to `/owner`; if an authenticated Supervisor session is active, it routes to `/record`; otherwise, it redirects immediately to `/login` without loading unneeded assets.
+  - **Owner-Driven Officer Provisioning**: Field Officers do not register independent organizations. Instead, the Owner creates the work place and provisions the officer (Name, Mobile Phone, 4-digit PIN) directly in `/owner` (saved with bcrypt hash in Turso DB).
+  - **Credential Verification & Rejection**: Login attempts against `/api/v1/auth/owner/login` and `/api/v1/auth/supervisor/login` are strictly validated against Turso. Entering an unregistered phone number or incorrect PIN triggers an immediate 401 HTTP response and displays a red warning banner without granting entry.
+  - **Strict Role Isolation**: Removed all client-side bypass buttons (`👑 Admin` shortcut in supervisor screen and `⌂ Diagnostic Hub` in login screen). After an officer submits their daily report, they receive verified success feedback and remain on their screen rather than being misdirected into the owner portal.
+- **Summary**:
+  Zero dummy data on launch, 100% database-verified authentication, and strict separation between Owner management and Field Officer reporting.
+
