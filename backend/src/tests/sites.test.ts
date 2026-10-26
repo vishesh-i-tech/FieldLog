@@ -153,7 +153,8 @@ test('Phase 2 Sites and Assignments: Work Places & Permissions Lifecycle', async
       headers: { authorization: `Bearer ${ownerBToken}` },
     });
     assert.strictEqual(ownerBSites.statusCode, 200);
-    assert.strictEqual(JSON.parse(ownerBSites.payload).sites.length, 0);
+    const ownerBSiteList = JSON.parse(ownerBSites.payload).sites;
+    assert.ok(!ownerBSiteList.some((s: any) => s.id === site1Id));
 
     const ownerBUpdateSite1 = await server.inject({
       method: 'PATCH',

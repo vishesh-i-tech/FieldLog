@@ -161,8 +161,8 @@ export const siteRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
         organizationId: user.organizationId,
         name: parsed.data.name,
         locationText: parsed.data.locationText,
-        latitude: parsed.data.latitude ? parsed.data.latitude.toString() : null,
-        longitude: parsed.data.longitude ? parsed.data.longitude.toString() : null,
+        latitude: parsed.data.latitude ? Number(parsed.data.latitude) : null,
+        longitude: parsed.data.longitude ? Number(parsed.data.longitude) : null,
       })
       .returning();
 
@@ -196,12 +196,12 @@ export const siteRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       return reply.status(404).send({ error: 'Work place not found in your organization' });
     }
 
-    const updatePayload: Record<string, any> = { updatedAt: new Date() };
+    const updatePayload: Record<string, any> = { updatedAt: new Date().toISOString() };
     if (parsed.data.name !== undefined) updatePayload.name = parsed.data.name;
     if (parsed.data.locationText !== undefined) updatePayload.locationText = parsed.data.locationText;
     if (parsed.data.isArchived !== undefined) updatePayload.isArchived = parsed.data.isArchived;
-    if (parsed.data.latitude !== undefined) updatePayload.latitude = parsed.data.latitude.toString();
-    if (parsed.data.longitude !== undefined) updatePayload.longitude = parsed.data.longitude.toString();
+    if (parsed.data.latitude !== undefined) updatePayload.latitude = Number(parsed.data.latitude);
+    if (parsed.data.longitude !== undefined) updatePayload.longitude = Number(parsed.data.longitude);
 
     const [updated] = await db
       .update(sites)

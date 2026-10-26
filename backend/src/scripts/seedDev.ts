@@ -115,8 +115,8 @@ async function runDevSeed() {
       organizationId: org.id,
       name: 'South Depot & Warehouse',
       locationText: 'Sector 62, Industrial Area, Noida',
-      latitude: '28.6280',
-      longitude: '77.3780',
+      latitude: 28.628,
+      longitude: 77.378,
     })
     .returning();
 
@@ -126,8 +126,8 @@ async function runDevSeed() {
       organizationId: org.id,
       name: 'Highway Retail Store #4',
       locationText: 'NH-48, Sector 14, Gurgaon',
-      latitude: '28.4720',
-      longitude: '77.0450',
+      latitude: 28.472,
+      longitude: 77.045,
     })
     .returning();
 
@@ -137,8 +137,8 @@ async function runDevSeed() {
       organizationId: org.id,
       name: 'North Manufacturing Unit',
       locationText: 'Plot 12, Ecotech 3, Greater Noida',
-      latitude: '28.5350',
-      longitude: '77.4890',
+      latitude: 28.535,
+      longitude: 77.489,
     })
     .returning();
 

@@ -144,7 +144,7 @@ export const issueTypeRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       .update(issueTypes)
       .set({
         ...parsed.data,
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
       })
       .where(and(eq(issueTypes.id, id), eq(issueTypes.organizationId, orgId)))
       .returning();

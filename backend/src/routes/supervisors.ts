@@ -144,7 +144,7 @@ export const supervisorRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
     const pinHash = await hashPin(parsed.data.pin);
     await db
       .update(users)
-      .set({ pinHash, updatedAt: new Date() })
+      .set({ pinHash, updatedAt: new Date().toISOString() })
       .where(eq(users.id, id));
 
     return reply.status(200).send({
@@ -185,7 +185,7 @@ export const supervisorRoutes: FastifyPluginAsync = async (fastify: FastifyInsta
 
     const [updated] = await db
       .update(users)
-      .set({ isActive: parsed.data.isActive, updatedAt: new Date() })
+      .set({ isActive: parsed.data.isActive, updatedAt: new Date().toISOString() })
       .where(eq(users.id, id))
       .returning({
         id: users.id,

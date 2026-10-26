@@ -185,7 +185,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     // Update last login timestamp
     await db
       .update(users)
-      .set({ lastLoginAt: new Date() })
+      .set({ lastLoginAt: new Date().toISOString() })
       .where(eq(users.id, user.id));
 
     const tokens = generateTokens({
@@ -261,7 +261,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     // Update last login timestamp
     await db
       .update(users)
-      .set({ lastLoginAt: new Date() })
+      .set({ lastLoginAt: new Date().toISOString() })
       .where(eq(users.id, supervisor.id));
 
     const tokens = generateTokens({

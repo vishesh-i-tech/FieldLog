@@ -183,8 +183,8 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       .from(dailyRecords)
       .where(and(eq(dailyRecords.siteId, siteId), eq(dailyRecords.recordDate, recordDate)));
 
-    const now = new Date();
-    const capturedAtDate = new Date(capturedAt);
+    const now = new Date().toISOString();
+    const capturedAtStr = new Date(capturedAt).toISOString();
 
     if (existingDayRecord) {
       // SAME-DAY UPDATE: compute audit diff and update record
@@ -208,7 +208,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         .set({
           clientId, // Update client ID to new submission ID
           status,
-          capturedAt: capturedAtDate,
+          capturedAt: capturedAtStr,
           receivedAt: now,
           submittedBy: user.userId,
           flags: { ...(existingDayRecord.flags as object || {}), ...flags },
@@ -239,10 +239,10 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
           storageKey: p.storageKey,
           mimeType: p.mimeType,
           sizeBytes: p.sizeBytes,
-          latitude: p.latitude ? p.latitude.toString() : null,
-          longitude: p.longitude ? p.longitude.toString() : null,
-          accuracyM: p.accuracyM ? p.accuracyM.toString() : null,
-          capturedAt: new Date(p.capturedAt),
+          latitude: p.latitude ? Number(p.latitude) : null,
+          longitude: p.longitude ? Number(p.longitude) : null,
+          accuracyM: p.accuracyM ? Number(p.accuracyM) : null,
+          capturedAt: p.capturedAt ? new Date(p.capturedAt).toISOString() : capturedAtStr,
           flags: p.flags,
         }));
         await db.insert(media).values(photoRows);
@@ -258,7 +258,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
           mimeType: audio.mimeType,
           sizeBytes: audio.sizeBytes,
           durationSeconds: audio.durationSeconds || null,
-          capturedAt: audio.capturedAt ? new Date(audio.capturedAt) : capturedAtDate,
+          capturedAt: audio.capturedAt ? new Date(audio.capturedAt).toISOString() : capturedAtStr,
         });
       }
 
@@ -279,7 +279,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         submittedBy: user.userId,
         recordDate,
         status,
-        capturedAt: capturedAtDate,
+        capturedAt: capturedAtStr,
         receivedAt: now,
         flags,
         missingPhoto: photos.length === 0,
@@ -305,10 +305,10 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         storageKey: p.storageKey,
         mimeType: p.mimeType,
         sizeBytes: p.sizeBytes,
-        latitude: p.latitude ? p.latitude.toString() : null,
-        longitude: p.longitude ? p.longitude.toString() : null,
-        accuracyM: p.accuracyM ? p.accuracyM.toString() : null,
-        capturedAt: new Date(p.capturedAt),
+        latitude: p.latitude ? Number(p.latitude) : null,
+        longitude: p.longitude ? Number(p.longitude) : null,
+        accuracyM: p.accuracyM ? Number(p.accuracyM) : null,
+        capturedAt: p.capturedAt ? new Date(p.capturedAt).toISOString() : capturedAtStr,
         flags: p.flags,
       }));
       await db.insert(media).values(photoRows);
@@ -323,7 +323,7 @@ export const recordRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
         mimeType: audio.mimeType,
         sizeBytes: audio.sizeBytes,
         durationSeconds: audio.durationSeconds || null,
-        capturedAt: audio.capturedAt ? new Date(audio.capturedAt) : capturedAtDate,
+        capturedAt: audio.capturedAt ? new Date(audio.capturedAt).toISOString() : capturedAtStr,
       });
     }
 
