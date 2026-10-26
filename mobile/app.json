@@ -46,7 +46,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow FieldLog to verify work place GPS coordinates."
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "extra": {
       "router": {

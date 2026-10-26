@@ -142,10 +142,10 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Role & Purpose**:
   Provides strict, production-ready database authentication without reference mock credentials, paired with interactive in-app submission validation that eliminates web `Alert.alert` flakiness.
 - **Under the Hood**:
-  - **Self-Service Authentication**: Users register their own organizations and credentials directly into PostgreSQL (Owners via Email/Password bcrypt hashes, Field Supervisors via Phone/4-digit PIN bcrypt hashes). Removed all hardcoded demo accounts. Automatic initial site provisioning ensures newly registered organizations are immediately ready for record submission.
+  - **Self-Service Authentication**: Users register their own organizations and credentials directly into the database (Owners via Email/Password bcrypt hashes, Field Supervisors via Phone/4-digit PIN bcrypt hashes). Removed all hardcoded demo accounts. Automatic initial site provisioning ensures newly registered organizations are immediately ready for record submission.
   - **In-App Modal Validation**: Replaces native browser dialogs with React Native `<Modal>` sheets featuring non-bubbling background sibling touchables. Work Status (`Full Day`, `Half Day`, `Work Stopped`) validation displays actionable warning banners and prevents blank submissions, while Fastify's `bodyLimit` is increased to 50MB to support high-resolution geotagged photo uploads.
 - **Summary**:
-  Clean, self-managed user authentication backed by PostgreSQL with dependable in-app validation.
+  Clean, self-managed user authentication backed by Turso (libSQL) with dependable in-app validation.
 
 ---
 
@@ -172,8 +172,21 @@ This document outlines the technologies, libraries, architectural decisions, and
   - **Screen 3 (Operations Analytics)**: Segmented time intervals (`Week | Month | Year`), total verified logs metric with positive trend pill (`▲ 8.2% vs last month`), interactive bar chart with the active month highlighted in vibrant emerald with a floating tooltip banner (`24 Logs`), and a top reported obstacle breakdown (`Rain / Bad Weather`, `Equipment Breakdown`, `Material Shortage`, `Less Manpower`, `Power Cut`) featuring proportional progress bars and site counts.
   - **Screen 4 & 5 (Workplace Compliance & Sites)**: Daily verification target card with dual-colored progress bar (`6 verified • 0 pending`), segmented filter pills (`All | Full Day | Half Day | Stopped`), status breakdown donut chart with central completion percentage, supervisor compliance tip banner, and workplace cards with 1-click field officer reassignment dialog.
   - **Screen 6 & 7 (Operations Milestones & Fleet Performance)**: Scenic mountain hero card (`mountains.jpg`) highlighting *"Build Operational Excellence"*, milestone progress cards (Zero Downtime, GPS Compliance, Machinery Fleet Khata, Voice SOPs), and link to Owner deep management.
-  - **Screen 8 (Profile & Health Gauge)**: User avatar (`avatar.jpg`), name, role badge, deep emerald Operational Compliance health card with "Excellent ↗" status and a 92% circular gauge, structured menu list with chevrons, live Neon Postgres connection latency stats, and outline "Log Out →" pill.
+  - **Screen 8 (Profile & Health Gauge)**: User avatar (`avatar.jpg`), name, role badge, deep emerald Operational Compliance health card with "Excellent ↗" status and a 92% circular gauge, structured menu list with chevrons, live Turso DB connection latency stats, and outline "Log Out →" pill.
   - **5-Tab Floating Bottom Navigation Bar**: Fixed bottom bar with active indicator dots and emerald highlights for instant client-side switching across all 5 operational views.
 - **Summary**:
-  Production-grade mobile design system matching the Finora UI reference with real workplaces, supervisors, attendance statuses, and live Neon DB integration.
+  Production-grade mobile design system matching the Finora UI reference with real workplaces, supervisors, attendance statuses, and live Turso DB integration.
+
+---
+
+## 17. Client-Side Offline SQLite Outbox Queue (`expo-sqlite` & NetInfo)
+- **Role & Purpose**:
+  Allows field supervisors to record and submit site attendance, photos, and voice notes even in remote field locations with zero cellular reception or intermittent connectivity. Automatically persists records in a local SQLite outbox queue on the device and syncs to the central cloud API when network returns.
+- **Under the Hood**:
+  - **Local SQLite Outbox Table (`sync_queue`)**: Automatically initialized upon app launch on Android/iOS via `expo-sqlite.openDatabaseAsync('fieldlog_offline.db')`. Columns track `id`, `client_id`, `site_id`, `site_name`, `record_date`, `status`, `captured_at`, `issue_type_ids`, `photos_json`, `audio_json`, `sync_state` (`PENDING`, `SYNCING`, `FAILED`, `SYNCED`), `retry_count`, and `last_error`. On web environments, it seamlessly falls back to `window.localStorage` with identical schema and query semantics.
+  - **Offline Site Catalog Caching (`cached_sites`)**: When a supervisor opens the app online, their assigned workplaces and coordinates are cached to the local SQLite table. If the app is later opened at a remote construction or mining site without internet, `getCachedWorkPlaces()` supplies the assigned workplaces so the officer can select their work site without needing a network ping.
+  - **Zero Data Loss Fallback**: `executeSubmission()` verifies network reachability via `NetInfo.fetch()`. If offline or if the network fetch encounters a timeout/error, the record is immediately committed to SQLite with a unique client-generated UUID, and the supervisor receives instant feedback (`"Saved to Phone Storage! 📱 Will auto-sync when online"`).
+  - **Reactive Connectivity Listener & Outbox Banner**: `setupAutoSyncListener()` hooks into `NetInfo.addEventListener`. As soon as the device reconnects to Wi-Fi or cellular network, `processSyncQueue()` triggers automatically in the background. It reads pending items, uploads photos and voice notes to the storage endpoint, submits the report to `/api/v1/records` (idempotent via `clientId`), and updates the row to `SYNCED`. An interactive outbox banner appears at the top of the screen (`"🔄 X report(s) stored locally"`) with a 1-tap manual "Sync Now" button.
+- **Summary**:
+  Guarantees 100% data reliability in the field with zero data loss, offline site selection, and automatic background upload upon network restoration.
 

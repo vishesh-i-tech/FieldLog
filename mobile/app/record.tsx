@@ -41,6 +41,14 @@ import {
   loginSupervisor,
   loginOwner,
 } from '../src/services/auth.state';
+import {
+  enqueueOfflineRecord,
+  cacheWorkPlaces,
+  getCachedWorkPlaces,
+  processSyncQueue,
+  subscribeToQueue,
+  setupAutoSyncListener,
+} from '../src/services/offlineSync.service';
 
 interface IssueChip {
   id: string;
@@ -110,6 +118,8 @@ export default function RecordSubmissionScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitStatusText, setSubmitStatusText] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [submissionFeedback, setSubmissionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
 
   // Form validation & submission confirmation modal
   const [statusValidationError, setStatusValidationError] = useState<string | null>(null);
@@ -153,6 +163,15 @@ export default function RecordSubmissionScreen() {
               setAssignedSites(data.sites);
               setSiteName(data.sites[0].name);
               setSiteId(data.sites[0].id);
+              cacheWorkPlaces(data.sites).catch((e) => console.warn('Cache sites warning:', e));
+            }
+          } else {
+            // Fallback to local SQLite cached sites
+            const cached = await getCachedWorkPlaces();
+            if (cached && cached.length > 0) {
+              setAssignedSites(cached as any);
+              setSiteName(cached[0].name);
+              setSiteId(cached[0].id);
             }
           }
 
@@ -172,14 +191,28 @@ export default function RecordSubmissionScreen() {
             }
           }
         } catch (err) {
-          console.error('Failed to load supervisor data:', err);
+          console.warn('Network offline or fetch error, fallback to cached sites:', err);
+          const cached = await getCachedWorkPlaces();
+          if (cached && cached.length > 0) {
+            setAssignedSites(cached as any);
+            setSiteName(cached[0].name);
+            setSiteId(cached[0].id);
+          }
         }
       }
     });
 
+    // 3. Listen to offline sync queue changes and auto-sync when network returns
+    const unsubQueue = subscribeToQueue((count) => {
+      setPendingSyncCount(count);
+    });
+    const unsubAutoSync = setupAutoSyncListener();
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       stopAudioPlayback();
+      unsubQueue();
+      unsubAutoSync();
     };
   }, []);
 
@@ -583,9 +616,44 @@ export default function RecordSubmissionScreen() {
     executeSubmission();
   };
 
+  const handleManualSync = async () => {
+    if (isSyncingNow) return;
+    setIsSyncingNow(true);
+    try {
+      const res = await processSyncQueue();
+      if (res.synced > 0) {
+        Alert.alert(
+          lang === 'hi' ? 'सिंक संपन्न' : 'Sync Complete',
+          lang === 'hi' ? `${res.synced} रिकॉर्ड सफलतापूर्वक अपलोड हो गए!` : `${res.synced} report(s) synced successfully!`
+        );
+      } else if (res.failed > 0) {
+        Alert.alert(
+          lang === 'hi' ? 'सिंक में समस्या' : 'Sync Notice',
+          lang === 'hi' ? 'कुछ रिकॉर्ड अभी अपलोड नहीं हो पाए। इंटरनेट कनेक्शन जांचें।' : 'Could not reach server. Please check internet connection.'
+        );
+      }
+    } catch (err) {
+      console.warn('Manual sync error:', err);
+    } finally {
+      setIsSyncingNow(false);
+    }
+  };
+
   const executeSubmission = async () => {
     setSubmitting(true);
     setSubmitStatusText('sending');
+
+    const clientGeneratedId = generateUuidV4();
+    const recordDate = new Date().toISOString().split('T')[0];
+    const capturedAt = new Date().toISOString();
+
+    // If siteId is default/missing, try to resolve from available sites
+    let targetSiteId = siteId;
+    if (!targetSiteId || targetSiteId === '00000000-0000-0000-0000-000000000001') {
+      if (assignedSites.length > 0) {
+        targetSiteId = assignedSites[0].id;
+      }
+    }
 
     try {
       const tokens = getAuthTokens();
@@ -593,25 +661,16 @@ export default function RecordSubmissionScreen() {
         throw new Error('Authentication expired. Please sign in to save records to the database.');
       }
 
-      // If siteId is default/missing, try to resolve from available sites
-      let targetSiteId = siteId;
-      if (!targetSiteId || targetSiteId === '00000000-0000-0000-0000-000000000001') {
-        if (assignedSites.length > 0) {
-          targetSiteId = assignedSites[0].id;
-        } else {
-          // Fetch user's sites directly
-          const sRes = await fetch(`${DEFAULT_API_BASE_URL}/api/v1/sites`, {
-            headers: { Authorization: `Bearer ${tokens.accessToken}` },
-          });
-          if (sRes.ok) {
-            const sData = await sRes.json();
-            if (sData.sites && sData.sites.length > 0) {
-              targetSiteId = sData.sites[0].id;
-              setSiteId(targetSiteId);
-              setSiteName(sData.sites[0].name);
-            }
-          }
-        }
+      // Check network connectivity first
+      let isOnline = true;
+      try {
+        const NetInfo = (await import('@react-native-community/netinfo')).default;
+        const netState = await NetInfo.fetch();
+        isOnline = Boolean(netState.isConnected && netState.isInternetReachable !== false);
+      } catch {}
+
+      if (!isOnline && Platform.OS !== 'web') {
+        throw new Error('OFFLINE_NETWORK_DISCONNECTED');
       }
 
       // 1. Upload real photos to local dev-storage stub so server holds the file
@@ -634,9 +693,9 @@ export default function RecordSubmissionScreen() {
             storageKey,
             mimeType: 'image/jpeg',
             sizeBytes: p.sizeBytes,
-            latitude: p.latitude,
-            longitude: p.longitude,
-            accuracyM: p.accuracyM,
+            latitude: p.latitude !== undefined && p.latitude !== null ? Number(p.latitude) : null,
+            longitude: p.longitude !== undefined && p.longitude !== null ? Number(p.longitude) : null,
+            accuracyM: p.accuracyM !== undefined && p.accuracyM !== null ? Number(p.accuracyM) : null,
             capturedAt: p.capturedAt,
             flags: p.isMockLocation ? { mock_location: true } : {},
           };
@@ -654,15 +713,12 @@ export default function RecordSubmissionScreen() {
         };
       }
 
-      const clientGeneratedId = generateUuidV4();
-      const recordDate = new Date().toISOString().split('T')[0];
-
       const payload = {
         clientId: clientGeneratedId,
         siteId: targetSiteId,
         recordDate,
         status,
-        capturedAt: new Date().toISOString(),
+        capturedAt,
         missingPhoto: photos.length === 0,
         missingVoice: !recordedAudio,
         issueTypeIds: selectedIssueIds,
@@ -680,14 +736,14 @@ export default function RecordSubmissionScreen() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || errData.error || 'Submission failed');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || errData.error || `Server returned ${response.status}`);
       }
 
       setSubmitStatusText('sent');
       setSubmissionFeedback({
         type: 'success',
-        text: lang === 'hi' ? 'डेटाबेस में सुरक्षित हो गया! ✅' : 'Saved to PostgreSQL Database! ✅',
+        text: lang === 'hi' ? 'डेटाबेस में सुरक्षित हो गया! ✅' : 'Saved to Cloud Database! ✅',
       });
 
       if (Platform.OS === 'web') {
@@ -696,14 +752,67 @@ export default function RecordSubmissionScreen() {
         router.push('/owner');
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setSubmitStatusText('idle');
-      setSubmissionFeedback({
-        type: 'error',
-        text: `${lang === 'hi' ? 'त्रुटि' : 'Error'}: ${msg}`,
-      });
+      // OFFLINE QUEUE FALLBACK: Seamlessly store in SQLite outbox
+      console.warn('Network offline or direct submit failed. Enqueuing offline record:', err);
+      try {
+        await enqueueOfflineRecord({
+          id: clientGeneratedId,
+          clientId: clientGeneratedId,
+          siteId: targetSiteId,
+          siteName: siteName,
+          recordDate,
+          status: status!,
+          capturedAt,
+          issueTypeIds: selectedIssueIds,
+          photos: photos.map((p) => ({
+            uri: p.uri,
+            sizeBytes: p.sizeBytes,
+            latitude: p.latitude !== undefined && p.latitude !== null ? Number(p.latitude) : null,
+            longitude: p.longitude !== undefined && p.longitude !== null ? Number(p.longitude) : null,
+            accuracyM: p.accuracyM !== undefined && p.accuracyM !== null ? Number(p.accuracyM) : null,
+            capturedAt: p.capturedAt,
+            isMockLocation: p.isMockLocation,
+          })),
+          audio: recordedAudio
+            ? {
+                uri: recordedAudio.uri,
+                mimeType: recordedAudio.mimeType,
+                sizeBytes: recordedAudio.sizeBytes,
+                durationSeconds: recordedAudio.durationSeconds,
+              }
+            : undefined,
+        });
+
+        setSubmitStatusText('sent');
+        setSubmissionFeedback({
+          type: 'success',
+          text:
+            lang === 'hi'
+              ? 'फ़ोन में सुरक्षित! 📱 इंटरनेट मिलते ही अपने-आप सिंक होगा'
+              : 'Saved to Phone Storage! 📱 Will auto-sync when online',
+        });
+
+        // Reset form after offline save so supervisor can record next entry
+        setTimeout(() => {
+          setStatus(null);
+          setSelectedIssueIds([]);
+          setPhotos([]);
+          setRecordedAudio(null);
+          setSubmitting(false);
+          setSubmitStatusText('idle');
+        }, 2200);
+      } catch (offlineErr: any) {
+        const msg = offlineErr instanceof Error ? offlineErr.message : String(offlineErr);
+        setSubmitStatusText('idle');
+        setSubmissionFeedback({
+          type: 'error',
+          text: `${lang === 'hi' ? 'त्रुटि' : 'Error'}: ${msg}`,
+        });
+      }
     } finally {
-      setSubmitting(false);
+      if (submitStatusText !== 'sent') {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -768,6 +877,39 @@ export default function RecordSubmissionScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* OFFLINE OUTBOX SYNC BANNER */}
+          {pendingSyncCount > 0 && (
+            <View style={styles.outboxBanner}>
+              <View style={styles.outboxInfo}>
+                <Text style={styles.outboxIcon}>🔄</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.outboxTitle}>
+                    {lang === 'hi'
+                      ? `${pendingSyncCount} रिपोर्ट फोन में सुरक्षित (ऑफलाइन)`
+                      : `${pendingSyncCount} report${pendingSyncCount > 1 ? 's' : ''} stored locally (Offline)`}
+                  </Text>
+                  <Text style={styles.outboxSub}>
+                    {isSyncingNow
+                      ? (lang === 'hi' ? 'सर्वर पर भेजा जा रहा है...' : 'Syncing to cloud...')
+                      : (lang === 'hi' ? 'इंटरनेट आने पर अपने-आप सिंक होगा' : 'Will auto-upload when connected')}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.syncNowBtn}
+                disabled={isSyncingNow}
+                onPress={handleManualSync}
+                activeOpacity={0.8}
+              >
+                {isSyncingNow ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.syncNowBtnText}>{lang === 'hi' ? 'अभी सिंक करें' : 'Sync Now'}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* WORK PLACE TRAY SELECTOR */}
           <TouchableOpacity
@@ -2528,5 +2670,50 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11,
     fontWeight: '600',
+  },
+  outboxBanner: {
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  outboxInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  outboxIcon: {
+    fontSize: 22,
+  },
+  outboxTitle: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  outboxSub: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  syncNowBtn: {
+    backgroundColor: '#0284C7',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  syncNowBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
