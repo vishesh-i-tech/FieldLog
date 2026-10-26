@@ -1,30 +1,43 @@
 # 📍 FieldLog
 
-> **Offline-first, mobile-first daily reporting app for business owners managing work across multiple remote locations.**  
-> *Built for real-world operations: shops, farms, factories, delivery hubs, repair teams, guards, and construction.*
+> **Offline-first, mobile-first enterprise daily attendance, reporting, and site management system.**  
+> *Built for real-world field operations: construction, warehouses, retail chains, factories, logistics hubs, repair teams, and facility security.*
 
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Expo](https://img.shields.io/badge/Expo-SDK%2052-000020?logo=expo&logoColor=white)](https://expo.dev/)
-[![React Native Web](https://img.shields.io/badge/React%20Native%20Web-Supported-61DAFB?logo=react&logoColor=white)](https://necolas.github.io/react-native-web/)
+[![React Native](https://img.shields.io/badge/React%20Native-0.76-61DAFB?logo=react&logoColor=black)](https://reactnative.dev/)
+[![Capacitor](https://img.shields.io/badge/Capacitor-v8-119EFF?logo=capacitor&logoColor=white)](https://capacitorjs.com/)
+[![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![Fastify](https://img.shields.io/badge/Fastify-v5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
-[![Neon Postgres](https://img.shields.io/badge/Neon-PostgreSQL%20Serverless-00E599?logo=postgresql&logoColor=white)](https://neon.tech/)
+[![Turso](https://img.shields.io/badge/Turso-libSQL%20Distributed-00E599?logo=sqlite&logoColor=white)](https://turso.tech/)
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle-ORM-C5F74F?logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 ---
 
+## ⚡ Quick Download & Live Access
+
+| Channel | Platform | Status | Access Link |
+|---|---|---|---|
+| **Android Native APK** | Android 8.0+ | **Build #6 Ready** | [⬇️ Download FieldLog APK](https://expo.dev/artifacts/eas/IQmXMMHIwCfyvulTlHoTU_2NwXlmyhqgAdF3Qlf7Aso.apk) |
+| **Expo Cloud Dashboard** | All Devices | Active | [📊 View Build #6 on EAS](https://expo.dev/accounts/vishesh-itech/projects/fieldlog/builds/5c2e1bbe-9225-46d2-acf1-fae9c8145e87) |
+| **PWA Web App** | Mobile / Desktop | Live | [🌐 Open Web App (Install via Chrome)](http://localhost:8081/login) |
+| **Production Backend** | Cloud API | Running on Render | `https://fieldlog-backend-4on5.onrender.com` |
+
+---
+
 ## 💡 What is FieldLog?
 
-Business owners running work across multiple remote sites cannot visit every location every day. Daily phone calls waste hours and result in miscommunication. Generic messaging apps (like WhatsApp) get cluttered and lack accountability.
+Business owners managing multiple distributed sites (stores, construction projects, agricultural lands, security posts) cannot physically visit every location every day. Traditional WhatsApp groups are unstructured, lack location accountability, and bury critical issues under noise.
 
-**FieldLog solves this with high-trust, zero-typing reporting:**
+**FieldLog provides high-trust, zero-friction daily operations:**
 
-* 🟢 **3-Tap Daily Status:** Big, accessible buttons for **Full Day**, **Half Day**, and **Work Stopped** (with multi-language localization).
-* 📸 **Live-Camera Geo-Tagging:** Real-time in-app camera capture stamped with GPS coordinates, satellite accuracy, and capture timestamps. **No photo gallery uploads allowed** (anti-fraud protection).
-* 🎙️ **60-Second Voice Notes:** Supervisors speak their daily update verbally. Live audio recording, instant in-app playback preview, and re-record capability.
-* 🏷️ **Dynamic Issue Chips:** Tap-to-report obstacles (*"Material Delayed"*, *"Short Staffed"*, *"Severe Weather"*, *"Equipment Breakdown"*, etc.) customized per business.
-* 🌐 **Instant Laptop Web Preview:** Develop and test live in your laptop browser (`npm run dev:web`) inside a centered 430px smartphone frame with dev-safe fallbacks.
-* 🛡️ **Strict Multi-Tenancy:** Complete tenant isolation at both the API layer and the database layer.
+* 🟢 **3-Tap Daily Attendance & Status**: Big, color-coded status selectors: **Full Day**, **Half Day**, and **Work Stopped** with dual-language support (**English & Hindi**).
+* 📸 **Live Geotagged Photos**: Photos stamped on-device with GPS coordinates, satellite accuracy, and real timestamps. Gallery uploads are protected against fraud.
+* 🎙️ **Voice Notes**: Officers record up to 60-second audio updates with real-time waveform timers, instant in-app playback, and cloud sync.
+* 🏷️ **Dynamic Issue Tagging**: Tap-to-report site obstacles (*"Material Delayed"*, *"Less Manpower"*, *"Severe Weather"*, *"Vehicle Breakdown"*, *"Need Cash/Funds"*, etc.).
+* 📅 **Historical Audit Trail & All-Photos Gallery**: Owners can browse past records date-by-date or inspect a chronological visual photo gallery for every workplace.
+* 🛡️ **Strict Multi-Tenancy & Provisioning**: Business owners create work places and provision supervisors (Phone + 4-digit PIN) directly from the Owner portal.
 
 ---
 
@@ -32,121 +45,196 @@ Business owners running work across multiple remote sites cannot visit every loc
 
 ```
                           ┌────────────────────────┐
-                          │   Business Owner       │
-                          │   (Web Dashboard)      │
+                          │     Business Owner     │
+                          │   (Web / Mobile App)   │
                           └───────────┬────────────┘
                                       │
                                       ▼
 ┌────────────────────────┐     ┌──────────────────┐     ┌────────────────────────┐
-│   Field Supervisor     │────▶│ Fastify Backend  │────▶│ Neon Serverless DB     │
-│   (Mobile App / Web)   │     │ (REST API / JWT) │     │ (Postgres + Drizzle)   │
+│    Field Officer       │────▶│ Fastify Backend  │────▶│ Turso Distributed DB   │
+│ (Android / PWA / Web)  │     │ (REST API / JWT) │     │ (libSQL + Drizzle ORM) │
 └────────────────────────┘     └─────────┬────────┘     └────────────────────────┘
             │                            │
             ▼                            ▼
 ┌────────────────────────┐     ┌──────────────────┐
-│  Device GPS + Camera   │     │  Object Storage  │
-│  + Audio Recorder      │     │  (Dev / R2 / S3) │
+│  Hardware GPS, Camera  │     │  Cloud Storage   │
+│   & Audio Recording    │     │  (Dev / R2 / S3) │
 └────────────────────────┘     └──────────────────┘
 ```
 
-* **Mobile & Frontend (`mobile/`):** React Native (Expo SDK 52), Expo Router v4, React Native Web, `expo-audio`, `expo-camera`, `expo-location`.
-* **Backend (`backend/`):** Fastify v5, TypeScript, JWT role-based access, bcrypt password & PIN hashing.
-* **Database:** Neon Serverless PostgreSQL with PgBouncer connection pooling and Drizzle ORM.
-* **Storage:** Presigned upload architecture (Local filesystem stub in dev, Cloudflare R2 / S3 in production).
+* **Mobile Core (`mobile/`)**: React Native (Expo SDK 52, React Native 0.76), Expo Router v4, React Native Web.
+* **Hybrid Deployment**:
+  * **Native APK**: Built via Expo Application Services (EAS Build).
+  * **Progressive Web App (PWA)**: Standalone web app manifest, custom icons, and background service worker for offline asset caching.
+  * **Capacitor Wrapper**: `@capacitor/core` & `@capacitor/android` wrapping the production web bundle into an Android WebView APK.
+* **Backend (`backend/`)**: Fastify v5, TypeScript, JWT role-based security, bcrypt password & PIN hashing.
+* **Database**: Turso (libSQL distributed SQLite engine) configured with WAL journaling and high-concurrency busy timeouts via Drizzle ORM.
+* **Media Pipeline**: Base64 data URL encoding, local binary storage stub, and dynamic host/protocol resolution.
 
 ---
 
-## 🚦 Roadmap & Implementation Status
+## 📲 4 Ways to Run & Install FieldLog
 
-| Phase | Feature | Status | Test Verification |
-|---|---|---|---|
-| **Phase 0** | **Foundation** (Monorepo, Fastify, Neon, Health Check, Expo) | ✅ Complete | Verified on Phone |
-| **Updates** | **FieldLog Generalized Architecture** (Universal neutral wording, Dynamic chips) | ✅ Complete | Automated Tests Pass |
-| **Phase 1** | **Auth & Roles** (Multi-tenant isolation, Owner signup, Supervisor PIN login) | ✅ Complete | Automated Tests Pass |
-| **Phase 2** | **Work Places & Assignments** (CRUD, Scoped permissions, Site mapping) | ✅ Complete | Automated Tests Pass |
-| **Phase 3** | **Daily Record Submission** (Status buttons, GPS photos, Idempotency, Edit diffs) | ✅ Complete | Automated Tests Pass |
-| **Phase 4** | **Voice Note Recording** (Web MediaRecorder, expo-audio, Live timer, Playback) | ✅ Complete | Automated Tests Pass |
-| **Phase 5** | Offline Sync Queue (SQLite, background retry worker, conflict resolution) | ⏳ In Progress | Manual Phone Check |
-| **Phase 6** | Owner Dashboard & Day Detail (7-day grid, Audio player, Photo carousel, "Seen" tick) | 📋 Planned | Automated Tests |
-| **Phase 7** | AI Voice Pipeline (Voice transcription via Whisper, LLM daily summaries) | 📋 Planned | Manual Phone Check |
-| **Phase 8** | Reminders & Push Notifications (5 PM supervisor alert, Evening digest) | 📋 Planned | Automated Tests |
-| **Phase 9** | Anti-Fake Hardening (Mock location flags, Time skew checks, Rate limits) | 📋 Planned | Automated Tests |
-| **Phase 10** | Production Release (EAS Build standalone APK/AAB, Play Store readiness) | 📋 Planned | Final Release |
+### Option 1: Direct Android APK (Recommended for Testing)
+1. Download the latest compiled APK on your Android device:
+   👉 **[Download FieldLog Build #6 APK](https://expo.dev/artifacts/eas/IQmXMMHIwCfyvulTlHoTU_2NwXlmyhqgAdF3Qlf7Aso.apk)**
+2. Tap the downloaded file in your notifications or Downloads folder to install.
+3. Open **FieldLog** from your home screen.
 
 ---
 
-## 🚀 Quick Start & Development
+### Option 2: Progressive Web App (PWA — 1-Click Browser Install)
+Zero APK download required. Works on Android, iOS, Windows, Mac, and Linux:
 
-### 1. Prerequisites
-* **Node.js** v18+ and **npm** v9+
-* Neon Postgres account (or local Postgres)
+1. Open **Google Chrome** on your phone (or laptop) and go to the web URL:
+   * **Local / Wi-Fi**: `http://localhost:8081/login`
+   * **Production**: `https://fieldlog-backend-4on5.onrender.com`
+2. Tap the Chrome menu (**⋮**) in the top right.
+3. Tap **"Install app"** (or **"Add to Home screen"**).
+4. Tap **Install**.
+5. **FieldLog** will appear on your home screen with its own icon and launch in **standalone full-screen mode** with no browser bars.
 
-### 2. Installation
+---
+
+### Option 3: Capacitor Android Project (WebView APK)
+If you want to package the web bundle into an Android Studio APK locally:
+
+```powershell
+# 1. Navigate to the mobile workspace
+cd mobile
+
+# 2. Build the static web bundle and sync with the Android project
+npm run cap:sync
+
+# 3. Open the project in Android Studio
+npm run cap:open
+
+# 4. Or compile debug APK via Gradle command line:
+cd android
+./gradlew assembleDebug
+```
+The compiled APK will be output at:  
+`mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+
+---
+
+### Option 4: Local Developer Monorepo Setup
+
+#### 1. Prerequisites
+* **Node.js** v18.x or v20+ / v22+
+* **npm** v9+
+* Git
+
+#### 2. Clone Repository & Install Dependencies
 ```powershell
 # Clone the repository
 git clone https://github.com/vishesh-i-tech/FieldLog.git
 cd FieldLog
 
-# Install dependencies across all workspaces
+# Install root dependencies
 npm install
+
+# Install mobile dependencies
+cd mobile && npm install && cd ..
+
+# Install backend dependencies
+cd backend && npm install && cd ..
 ```
 
-### 3. Configure Environment
+#### 3. Environment Variables
 Create `backend/.env`:
 ```env
 PORT=4000
 NODE_ENV=development
-DATABASE_URL="postgresql://user:password@ep-cold-pooler.neon.tech/neondb?sslmode=require"
-DIRECT_URL="postgresql://user:password@ep-cold.neon.tech/neondb?sslmode=require"
+TURSO_DATABASE_URL="libsql://feildlog-vishesh-i-tech.aws-ap-south-1.turso.io"
+TURSO_AUTH_TOKEN="<your-turso-jwt-token>"
 JWT_SECRET="dev-super-secret-key-change-in-production-12345"
+API_BASE_URL="http://localhost:4000"
 ```
 
-Push database schema to Neon:
+Push schema to Turso database:
 ```powershell
+cd backend
 npm run db:push
 ```
 
-### 4. Seed Realistic Test Data
-```powershell
-npm run seed:dev
+#### 4. Launch Development Servers
+Open two terminal windows:
+
+* **Terminal 1: Start Backend API (Port 4000)**
+  ```powershell
+  cd backend
+  npm run dev
+  ```
+
+* **Terminal 2: Start Mobile / Web App (Port 8081)**
+  ```powershell
+  cd mobile
+  npm run web
+  ```
+Open `http://localhost:8081/login` in your browser.
+
+---
+
+## 📁 Repository Structure
+
 ```
-*Seeds a test owner (`owner@fieldlog.dev`), 2 supervisors with 4-digit PINs (`9811111111` / `1234`), 3 work places, and 7 days of realistic history.*
-
-### 5. Run the Application
-
-```powershell
-# Start the Fastify backend API (Port 4000)
-npm run dev:backend
-
-# Launch the interactive Web Preview in your Laptop Browser (Port 8081)
-npm run dev:web
-
-# Launch on your physical mobile phone via Expo Go
-npm run dev:mobile
+FieldLog/
+├── backend/                       # Fastify API Server
+│   ├── src/
+│   │   ├── db/                    # Drizzle ORM schema & Turso client
+│   │   ├── routes/                # REST endpoints (auth, sites, records, devStorage)
+│   │   ├── services/              # Business logic & auth services
+│   │   └── server.ts              # Fastify instance & CORS configuration
+│   ├── uploads/                   # Local media persistence folder
+│   └── package.json
+│
+├── mobile/                        # React Native / Expo / PWA / Capacitor App
+│   ├── android/                   # Capacitor Android Studio native project
+│   ├── app/                       # Expo Router screens (index, login, owner, record)
+│   ├── assets/                    # Image assets & illustrations
+│   ├── public/                    # PWA static assets (manifest.json, service-worker, icons)
+│   ├── src/
+│   │   ├── constants/             # API configuration & base URLs
+│   │   ├── services/              # Audio, Photo, Location, Auth, and Offline Sync
+│   │   └── i18n/                  # English and Hindi localization dictionaries
+│   ├── capacitor.config.ts        # Capacitor configuration
+│   ├── eas.json                   # EAS Build profiles (preview, production)
+│   └── package.json
+│
+├── docs/                          # Architecture & design specifications
+├── explainer.md                   # Chronological technical architecture explainer
+└── README.md                      # Project documentation & setup guide
 ```
 
 ---
 
-## 📚 Documentation Index
+## 🚦 Roadmap & Implementation Status
 
-Complete project specifications are maintained in the [`/docs`](docs/) directory:
+| Feature | Description | Status | Verification |
+|---|---|---|---|
+| **Clean Enterprise Auth** | Dynamic role router, owner email/pass, officer phone/4-digit PIN | ✅ Complete | Verified on Device |
+| **Site & Officer Mapping** | Dynamic categories, 1-click inline officer provisioning & assignment | ✅ Complete | Verified on Device |
+| **Daily Record Online** | 3-tap status, on-device GPS stamping, same-day edit diffs | ✅ Complete | Verified on Device |
+| **Voice Note Recording** | Dual-mode Web MediaRecorder & native `expo-audio` | ✅ Complete | Verified on Device |
+| **Android Notch Insets** | `StatusBar.currentHeight` safe-area padding across screens | ✅ Complete | Verified on Device |
+| **Cloud Photo Pipeline** | Base64 image compression, dynamic host URLs, verified GPS fallback | ✅ Complete | Verified on Device |
+| **Date-Wise History** | Chronological audit trail with horizontal date switcher | ✅ Complete | Verified on Device |
+| **All-Photos Gallery** | Multi-date responsive photo grid with GPS badges | ✅ Complete | Verified on Device |
+| **PWA Web App** | Web manifest, offline service worker, 1-click browser install | ✅ Complete | Verified on Browser |
+| **Capacitor Android** | Web bundle sync, native Android Studio project, hardware permissions | ✅ Complete | Verified via CLI |
+| **Automated Tests** | Backend test suite across auth, sites, and daily records | ✅ Complete | 6/6 Suites Passing |
 
-* 🗺️ **[System Architecture](docs/ARCHITECTURE.md)** — Architectural design, environments (dev/preview/prod), and data flows.
-* 🗄️ **[Database Dictionary](docs/DATABASE.md)** — Complete schema definitions, tables, constraints, and indexes.
-* 🔌 **[REST API Reference](docs/API.md)** — Endpoints, payloads, query parameters, and auth contracts.
-* 📦 **[Distribution Guide](docs/DISTRIBUTION.md)** — EAS Build profiles, APK generation for testers, and OTA updates.
-* 📱 **[UI Living Screen Directory](docs/UI_NOTES.md)** — Screen-by-screen route directory, components, and design guidelines.
-* 🛡️ **[Anti-Fake Policy](docs/ANTI_FAKE.md)** — Location spoofing defense, time manipulation detection, and trust policies.
-* ⚖️ **[Decisions Log](docs/DECISIONS.md)** — Complete architectural trade-off log (DEC-001 to DEC-011).
-* 📝 **[Changelog](docs/CHANGELOG.md)** — Chronological release history.
+---
 
-### Feature Deep-Dives
-* [00. Foundation](docs/features/00-foundation.md)
-* [01. Auth & Roles](docs/features/01-auth-and-roles.md)
-* [01b. Customizable Issue Types](docs/features/01b-issue-types.md)
-* [02. Sites & Assignments](docs/features/02-sites-and-assignments.md)
-* [03. Daily Record Online](docs/features/03-daily-record.md)
-* [04. Voice Note Recording](docs/features/04-voice-note.md)
+## 🧪 Testing & Verification
+
+Run the automated backend test suite:
+```powershell
+cd backend
+npm test -- --test-concurrency=1
+```
+Result: **6 passed suites, 0 failed** (Auth, Sites, Daily Records, Media Storage).
 
 ---
 
