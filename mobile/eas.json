@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://172.20.10.10:4000"
+        "EXPO_PUBLIC_API_URL": "https://fieldlog-backend-4on5.onrender.com"
       }
     },
     "preview": {
@@ -18,7 +18,7 @@
       },
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-preview.fieldlog.app"
+        "EXPO_PUBLIC_API_URL": "https://fieldlog-backend-4on5.onrender.com"
       }
     },
     "production": {
@@ -27,7 +27,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.fieldlog.app"
+        "EXPO_PUBLIC_API_URL": "https://fieldlog-backend-4on5.onrender.com"
       }
     }
   },

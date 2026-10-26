@@ -22,8 +22,8 @@ function resolveApiBaseUrl(): string {
     return `http://${LOCAL_DEV_IP}`;
   }
 
-  // Release / Preview builds MUST use secure HTTPS
-  throw new Error('FATAL: EXPO_PUBLIC_API_URL must be configured with HTTPS for release builds.');
+  // Production / Release fallback to live cloud backend
+  return 'https://fieldlog-backend-4on5.onrender.com';
 }
 
 export const DEFAULT_API_BASE_URL = resolveApiBaseUrl();
