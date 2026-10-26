@@ -1,0 +1,25 @@
+{
+  "short_name": "FieldLog",
+  "name": "FieldLog — Enterprise Daily Records",
+  "description": "Enterprise daily site attendance, verifiable geotagged photo capture, and issue tracking.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/login",
+  "background_color": "#121212",
+  "theme_color": "#0B192C",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}

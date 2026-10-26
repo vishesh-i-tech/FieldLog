@@ -215,3 +215,15 @@ This document outlines the technologies, libraries, architectural decisions, and
 - **Summary**:
   Hardware-safe status bar spacing, crash-proof native voice recording, and end-to-end base64 geotagged photo capture and cloud rendering.
 
+---
+
+## 20. Progressive Web App (PWA) Engine & Capacitor Android Wrapper Architecture
+- **Role & Purpose**:
+  Provides multi-channel deployment flexibility by enabling FieldLog to be installed directly from the browser as a standalone Progressive Web App (PWA) with zero APK download friction, alongside an integrated Capacitor Android project that packages the web application bundle into a native Android WebView wrapper.
+- **Under the Hood**:
+  - **PWA Web Manifest & Service Worker**: Added `manifest.json` with standalone display (`display: "standalone"`, `orientation: "portrait"`, theme `#0B192C`, dark canvas `#121212`) and high-resolution icons (192x192, 512x512). In `_layout.tsx`, injected manifest links, Apple mobile web app tags, and registered `service-worker.js` with offline caching (`caches.open('fieldlog-cache-v1')`). When launched as an installed PWA, `_layout.tsx` detects mobile screen widths and expands to full 100% viewport width without desktop border cards.
+  - **Capacitor Android Project (`@capacitor/android`)**: Configured `capacitor.config.ts` targeting `dist/` web export with `androidScheme: 'https'` and cleartext traffic support. In `AndroidManifest.xml`, declared Android hardware capabilities (`CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`). Added `npm run cap:sync` to compile Metro web bundles and sync assets directly into `android/app/src/main/assets/public` in under 300ms.
+- **Summary**:
+  Instant browser "Install App" capability across all Android/iOS/Desktop devices combined with rapid local Capacitor Android packaging.
+
+

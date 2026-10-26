@@ -29,7 +29,15 @@
       ]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "FieldLog",
+      "shortName": "FieldLog",
+      "description": "Enterprise daily site records, verifiable geotagged photo capture, and issue tracking.",
+      "themeColor": "#0B192C",
+      "backgroundColor": "#121212",
+      "display": "standalone",
+      "orientation": "portrait",
+      "lang": "en"
     },
     "plugins": [
       "expo-router",
