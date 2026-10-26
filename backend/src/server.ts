@@ -30,8 +30,8 @@ export async function buildServer() {
     origin: isDev
       ? true // Allow localhost:8081, dev browser, and mobile clients in dev
       : (origin, cb) => {
-          // In production, only allow approved frontend domain or mobile apps (no-origin)
-          if (!origin || origin.startsWith('https://')) {
+          // Allow https origins or localhost for development/preview testing
+          if (!origin || origin.startsWith('https://') || origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
             cb(null, true);
             return;
           }

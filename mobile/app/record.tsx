@@ -746,11 +746,15 @@ export default function RecordSubmissionScreen() {
         text: lang === 'hi' ? 'डेटाबेस में सुरक्षित हो गया! ✅' : 'Saved to Cloud Database! ✅',
       });
 
-      if (Platform.OS === 'web') {
-        setTimeout(() => router.push('/owner'), 1200);
-      } else {
-        router.push('/owner');
-      }
+      // Keep the officer on their record screen and reset form inputs after feedback
+      setTimeout(() => {
+        setStatus(null);
+        setSelectedIssueIds([]);
+        setPhotos([]);
+        setRecordedAudio(null);
+        setSubmitting(false);
+        setSubmitStatusText('idle');
+      }, 2500);
     } catch (err: unknown) {
       // OFFLINE QUEUE FALLBACK: Seamlessly store in SQLite outbox
       console.warn('Network offline or direct submit failed. Enqueuing offline record:', err);
@@ -825,23 +829,11 @@ export default function RecordSubmissionScreen() {
         >
           {/* TOP BAR: Role Toggle (Admin / Field Officer) & Compact Language Toggle (EN / HN) */}
           <View style={styles.topBar}>
-            {/* Role Switcher */}
-            <View style={styles.roleToggle}>
-              <TouchableOpacity
-                style={styles.roleBtn}
-                onPress={() => router.push('/owner')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.roleBtnText}>👑 {t('admin')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleBtn, styles.roleBtnActive]}
-                activeOpacity={1}
-              >
-                <Text style={[styles.roleBtnText, styles.roleBtnTextActive]} numberOfLines={1}>
-                  👷 {supervisorName || t('fieldOfficer')}
-                </Text>
-              </TouchableOpacity>
+            {/* Officer Identity Badge */}
+            <View style={styles.officerBadgePill}>
+              <Text style={styles.officerBadgeText} numberOfLines={1}>
+                👷 {supervisorName || t('fieldOfficer')}
+              </Text>
             </View>
 
             {/* Controls: Language Switcher & Logout */}
@@ -2670,6 +2662,20 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11,
     fontWeight: '600',
+  },
+  officerBadgePill: {
+    backgroundColor: '#0F2942',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    maxWidth: 200,
+  },
+  officerBadgeText: {
+    color: '#38BDF8',
+    fontSize: 13,
+    fontWeight: '700',
   },
   outboxBanner: {
     backgroundColor: '#1E293B',

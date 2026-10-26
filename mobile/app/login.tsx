@@ -229,29 +229,16 @@ export default function LoginScreen() {
           <View style={styles.curvedHeader}>
             {/* Top Navigation Row */}
             <View style={styles.headerTopNav}>
-              <TouchableOpacity
-                style={styles.headerBackBtn}
-                onPress={() => {
-                  if (screenMode === 'signin') {
-                    router.push('/');
-                  } else {
+              {screenMode !== 'signin' && (
+                <TouchableOpacity
+                  style={styles.headerBackBtn}
+                  onPress={() => {
                     setErrorMessage(null);
                     setScreenMode('signin');
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.headerBackText}>
-                  {screenMode === 'signin' ? '⌂ Diagnostic Hub' : '← Back'}
-                </Text>
-              </TouchableOpacity>
-
-              {screenMode === 'signup' && (
-                <TouchableOpacity
-                  onPress={() => setScreenMode('signin')}
+                  }}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.headerSkipText}>Skip</Text>
+                  <Text style={styles.headerBackText}>← Back to Sign In</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -405,9 +392,15 @@ export default function LoginScreen() {
                   </>
                 ) : (
                   <>
-                    {/* Supervisor Inputs */}
+                    {/* Supervisor Guidance & Inputs */}
+                    <View style={styles.officerNoticeBox}>
+                      <Text style={styles.officerNoticeText}>
+                        ℹ️ Field Officers are created and assigned to sites by their Business Owner. Enter your registered mobile phone number and 4-digit PIN.
+                      </Text>
+                    </View>
+
                     <View style={styles.inputGroup}>
-                      <Text style={styles.fieldLabel}>Phone Number</Text>
+                      <Text style={styles.fieldLabel}>Mobile Phone Number</Text>
                       <TextInput
                         style={styles.textInput}
                         value={phone}
@@ -479,17 +472,25 @@ export default function LoginScreen() {
                 </View>
 
                 {/* Bottom Switch Link */}
-                <View style={styles.bottomLinkRow}>
-                  <Text style={styles.bottomLinkMuted}>Don't Have An Account? </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setErrorMessage(null);
-                      setScreenMode('signup');
-                    }}
-                  >
-                    <Text style={styles.bottomLinkBold}>Sign Up</Text>
-                  </TouchableOpacity>
-                </View>
+                {selectedRole === 'owner' ? (
+                  <View style={styles.bottomLinkRow}>
+                    <Text style={styles.bottomLinkMuted}>New Business? </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setErrorMessage(null);
+                        setScreenMode('signup');
+                      }}
+                    >
+                      <Text style={styles.bottomLinkBold}>Register Organization</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.bottomLinkRow}>
+                    <Text style={styles.bottomLinkMuted}>
+                      Not registered yet? Ask your Business Owner to add you.
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
@@ -1389,5 +1390,19 @@ const styles = StyleSheet.create({
     color: '#16A34A',
     fontSize: 12,
     fontWeight: '600',
+  },
+  officerNoticeBox: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  officerNoticeText: {
+    color: '#1E40AF',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
   },
 });
